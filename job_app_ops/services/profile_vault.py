@@ -141,7 +141,26 @@ def _extract_text(path: Path, content: bytes) -> str:
 
         reader = PdfReader(io.BytesIO(content))
         return "\n".join(page.extract_text() or "" for page in reader.pages)
+    if suffix == ".odt":
+        return _extract_odt_text(content)
     return content.decode("utf-8-sig", errors="ignore")
+
+
+def _extract_odt_text(content: bytes) -> str:
+    from xml.etree import ElementTree
+    from zipfile import ZipFile
+
+    with ZipFile(io.BytesIO(content)) as archive:
+        xml_content = archive.read("content.xml")
+
+    root = ElementTree.fromstring(xml_content)
+    paragraphs: list[str] = []
+    for element in root.iter():
+        if element.tag.endswith("}p") or element.tag.endswith("}h"):
+            text = re.sub(r"\s+", " ", "".join(element.itertext())).strip()
+            if text:
+                paragraphs.append(text)
+    return "\n".join(paragraphs)
 
 
 def _excerpt(text: str, length: int = 6000) -> str:
