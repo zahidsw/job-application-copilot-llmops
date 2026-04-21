@@ -25,6 +25,22 @@ smtp_user="${SMTP_USER:-}"
 smtp_password="${SMTP_PASSWORD:-}"
 smtp_from="${SMTP_FROM:-}"
 
+retry() {
+  local max_attempts=3
+  local delay_seconds=20
+  local attempt=1
+
+  until "$@"; do
+    if [ "${attempt}" -ge "${max_attempts}" ]; then
+      return 1
+    fi
+
+    echo "Command failed on attempt ${attempt}/${max_attempts}. Retrying in ${delay_seconds}s: $*"
+    sleep "${delay_seconds}"
+    attempt=$((attempt + 1))
+  done
+}
+
 acr_name="$(echo "${base_name}acr" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-50)"
 storage_account_name="$(echo "${base_name}files" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-24)"
 container_apps_env_name="${AZURE_CONTAINER_APPS_ENVIRONMENT_NAME:-${base_name}-env}"
@@ -65,20 +81,20 @@ mlflow_image="${acr_login_server}/jobapp-mlflow:${image_tag}"
 prometheus_image="${acr_login_server}/jobapp-prometheus:${image_tag}"
 grafana_image="${acr_login_server}/jobapp-grafana:${image_tag}"
 
-docker build -t "${app_image}" -f Dockerfile .
-docker push "${app_image}"
+retry docker build -t "${app_image}" -f Dockerfile .
+retry docker push "${app_image}"
 
-docker build -t "${dashboard_image}" -f dashboard-ui/Dockerfile .
-docker push "${dashboard_image}"
+retry docker build -t "${dashboard_image}" -f dashboard-ui/Dockerfile .
+retry docker push "${dashboard_image}"
 
-docker build -t "${mlflow_image}" -f ops/mlflow/Dockerfile .
-docker push "${mlflow_image}"
+retry docker build -t "${mlflow_image}" -f ops/mlflow/Dockerfile .
+retry docker push "${mlflow_image}"
 
-docker build -t "${prometheus_image}" -f ops/prometheus/Dockerfile .
-docker push "${prometheus_image}"
+retry docker build -t "${prometheus_image}" -f ops/prometheus/Dockerfile .
+retry docker push "${prometheus_image}"
 
-docker build -t "${grafana_image}" -f ops/grafana/Dockerfile .
-docker push "${grafana_image}"
+retry docker build -t "${grafana_image}" -f ops/grafana/Dockerfile .
+retry docker push "${grafana_image}"
 
 az deployment group create \
   --name "${apps_deployment_name}" \
