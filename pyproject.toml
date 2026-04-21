@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-application-copilot-llmops"
+version = "0.1.0"
+description = "Multi-agent job application platform with LangGraph, remote tools, FastAPI, MLflow, Prometheus, and Grafana."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "beautifulsoup4>=4.13.3",
+  "fastapi>=0.116.1",
+  "httpx>=0.28.1",
+  "jinja2>=3.1.6",
+  "langgraph>=0.6.5",
+  "markdown>=3.8.2",
+  "mlflow-skinny>=3.11.1",
+  "pypdf>=5.4.0",
+  "prometheus-client>=0.22.1",
+  "pydantic>=2.11.4",
+  "pydantic-settings>=2.9.1",
+  "python-docx>=1.1.2",
+  "python-dotenv>=1.1.0",
+  "python-multipart>=0.0.20",
+  "reportlab>=4.2.5",
+  "sqlalchemy>=2.0.40",
+  "psycopg[binary]>=3.2.9",
+  "tenacity>=9.1.2",
+  "uvicorn[standard]>=0.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.26.0",
+]
+
+[project.scripts]
+job-app-api = "job_app_ops.api.app:run_api"
+job-app-mcp = "job_app_ops.mcp_app:run_mcp"
+job-app-evals = "job_app_ops.evals.runner:main"
+
+[tool.setuptools.packages.find]
+include = ["job_app_ops*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

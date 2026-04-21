@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.idea/
+data/
+dashboard-ui/dist/
+dashboard-ui/node_modules/
+ops/azure/generated/
+ops/azure/main.json
+*.egg-info/
+*.log

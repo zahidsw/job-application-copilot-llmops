@@ -1,0 +1,221 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${APP_DB_NAME:-jobapp}
+      POSTGRES_USER: ${APP_DB_USER:-jobapp}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-jobapp}
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mlflow-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${MLFLOW_DB_NAME:-mlflow}
+      POSTGRES_USER: ${MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:-mlflow}
+    ports:
+      - "5435:5432"
+    volumes:
+      - mlflow-pgdata:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-change-me-minio}; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done &&
+      mc mb -p local/${MLFLOW_ARTIFACT_BUCKET:-mlflow} || true
+      "
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: ops/mlflow/Dockerfile
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --allowed-hosts mlflow,mlflow:5000,localhost,127.0.0.1
+      --backend-store-uri postgresql+psycopg://${MLFLOW_DB_USER:-mlflow}:${MLFLOW_DB_PASSWORD:-mlflow}@mlflow-db:5432/${MLFLOW_DB_NAME:-mlflow}
+      --artifacts-destination s3://${MLFLOW_ARTIFACT_BUCKET:-mlflow}
+      --serve-artifacts
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: ${MLFLOW_S3_ENDPOINT_URL:-http://minio:9000}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+    ports:
+      - "5001:5000"
+    depends_on:
+      mlflow-db:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+
+  model:
+    image: vllm/vllm-openai:latest
+    command: >
+      --host 0.0.0.0
+      --port 8000
+      --model ${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-8192}
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    ports:
+      - "8001:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    ipc: host
+    profiles:
+      - gpu
+
+  api:
+    build: .
+    image: job-application-copilot-llmops:latest
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://jobapp:jobapp@postgres:5432/jobapp}
+      ARTIFACTS_DIR: ${ARTIFACTS_DIR:-/app/data/artifacts}
+      PROFILES_DIR: ${PROFILES_DIR:-/app/data/profiles}
+      REPORTS_DIR: ${REPORTS_DIR:-/app/data/reports}
+      MATCH_THRESHOLD: ${MATCH_THRESHOLD:-70}
+      ALLOWED_SOURCE_DOMAINS: ${ALLOWED_SOURCE_DOMAINS:-greenhouse.io,lever.co,workday.com,smartrecruiters.com,linkedin.com,indeed.com}
+      MANUAL_ONLY_DOMAINS: ${MANUAL_ONLY_DOMAINS:-linkedin.com,indeed.com}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://model:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-local}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-json_object}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-1400}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-60}
+      MCP_SERVER_URL: ${MCP_SERVER_URL:-http://mcp:8081}
+      MCP_VERIFY_SSL: ${MCP_VERIFY_SSL:-true}
+      MCP_CLIENT_SERVICE_NAME: ${MCP_CLIENT_SERVICE_NAME:-job-app-api}
+      MCP_CLIENT_AUTH_TOKEN: ${MCP_CLIENT_AUTH_TOKEN:-change-me-api-token}
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-local-dev}
+      REQUIRE_TENANT_HEADER: ${REQUIRE_TENANT_HEADER:-false}
+      ALLOWED_TENANTS: ${ALLOWED_TENANTS:-local-dev}
+      MLFLOW_ENABLED: ${MLFLOW_ENABLED:-true}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-job-application-copilot}
+      MLFLOW_EVAL_EXPERIMENT_NAME: ${MLFLOW_EVAL_EXPERIMENT_NAME:-job-application-copilot-evals}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      COMPANY_SITE_AUTO_OPEN: ${COMPANY_SITE_AUTO_OPEN:-false}
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mcp:
+        condition: service_started
+      mlflow:
+        condition: service_started
+
+  mcp:
+    image: job-application-copilot-llmops:latest
+    command: python -m uvicorn job_app_ops.mcp_app:app --host 0.0.0.0 --port 8081
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      MCP_PORT: 8081
+      ALLOWED_SOURCE_DOMAINS: ${ALLOWED_SOURCE_DOMAINS:-greenhouse.io,lever.co,workday.com,smartrecruiters.com,linkedin.com,indeed.com}
+      MANUAL_ONLY_DOMAINS: ${MANUAL_ONLY_DOMAINS:-linkedin.com,indeed.com}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai_compatible}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://model:8000/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-local}
+      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+      LLM_JSON_MODE: ${LLM_JSON_MODE:-json_object}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-1400}
+      REQUEST_TIMEOUT_SECONDS: ${REQUEST_TIMEOUT_SECONDS:-60}
+    ports:
+      - "8083:8081"
+
+  evaluator:
+    image: job-application-copilot-llmops:latest
+    command: python -m job_app_ops.evals.runner
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://jobapp:jobapp@postgres:5432/jobapp}
+      EVAL_DATASET_PATH: ${EVAL_DATASET_PATH:-ops/evals/golden_dataset.json}
+      MLFLOW_ENABLED: ${MLFLOW_ENABLED:-true}
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_EVAL_EXPERIMENT_NAME: ${MLFLOW_EVAL_EXPERIMENT_NAME:-job-application-copilot-evals}
+    profiles:
+      - eval
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard-ui/Dockerfile
+    ports:
+      - "3002:80"
+    depends_on:
+      api:
+        condition: service_started
+      mcp:
+        condition: service_started
+      grafana:
+        condition: service_started
+      mlflow:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
+volumes:
+  pgdata:
+  mlflow-pgdata:
+  minio-data:
+  hf-cache:

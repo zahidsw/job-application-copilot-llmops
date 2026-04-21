@@ -1,0 +1,212 @@
+name: CI/CD To Azure Container Apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which environment should be deployed.
+        type: choice
+        required: true
+        default: test
+        options:
+          - test
+          - prod
+          - both
+      image_tag:
+        description: Optional image tag override. Defaults to the commit SHA.
+        required: false
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "feat/**"
+      - "bugfix/**"
+      - "hotfix/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile Python package
+        run: |
+          python -m compileall job_app_ops
+
+      - name: Run tests when present
+        run: |
+          if [ -d tests ]; then
+            python -m pytest
+          else
+            echo "No tests directory found yet; skipping pytest."
+          fi
+
+      - name: Validate Docker Compose
+        run: |
+          docker compose config --quiet
+
+      - name: Validate Azure Bicep
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az bicep install
+            az bicep build --file ops/azure/main.bicep
+
+  deploy_test:
+    name: Deploy test
+    runs-on: ubuntu-latest
+    environment: test
+    needs:
+      - validate
+    concurrency:
+      group: job-application-copilot-test
+      cancel-in-progress: true
+    if: >
+      needs.validate.result == 'success' &&
+      (
+        (
+          github.event_name == 'workflow_dispatch' &&
+          (github.event.inputs.target == 'test' || github.event.inputs.target == 'both')
+        ) ||
+        (
+          github.event_name == 'push' &&
+          (
+            startsWith(github.ref_name, 'feature/') ||
+            startsWith(github.ref_name, 'feat/') ||
+            startsWith(github.ref_name, 'bugfix/') ||
+            startsWith(github.ref_name, 'hotfix/')
+          )
+        )
+      )
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Container Apps extension
+        run: |
+          az extension add --name containerapp --upgrade
+
+      - name: Deploy test environment
+        run: |
+          chmod +x ops/azure/deploy-from-ci.sh
+          ./ops/azure/deploy-from-ci.sh
+        env:
+          DEPLOYMENT_ENVIRONMENT: test
+          IMAGE_TAG: ${{ github.event.inputs.image_tag || github.sha }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_BASE_NAME: ${{ vars.AZURE_BASE_NAME }}
+          AZURE_POSTGRES_ADMIN_USER: ${{ vars.AZURE_POSTGRES_ADMIN_USER }}
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_JSON_MODE: ${{ vars.LLM_JSON_MODE }}
+          LLM_TEMPERATURE: ${{ vars.LLM_TEMPERATURE }}
+          LLM_MAX_TOKENS: ${{ vars.LLM_MAX_TOKENS }}
+          REQUEST_TIMEOUT_SECONDS: ${{ vars.REQUEST_TIMEOUT_SECONDS }}
+          MCP_CLIENT_AUTH_TOKEN: ${{ secrets.MCP_CLIENT_AUTH_TOKEN }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ vars.SMTP_FROM }}
+
+  deploy_prod:
+    name: Deploy prod
+    runs-on: ubuntu-latest
+    environment: prod
+    needs:
+      - validate
+      - deploy_test
+    concurrency:
+      group: job-application-copilot-prod
+      cancel-in-progress: false
+    if: >
+      always() &&
+      needs.validate.result == 'success' &&
+      (
+        (
+          github.event_name == 'workflow_dispatch' &&
+          (github.event.inputs.target == 'prod' || github.event.inputs.target == 'both')
+        ) ||
+        (
+          github.event_name == 'push' &&
+          github.ref_name == 'main'
+        )
+      ) &&
+      (needs.deploy_test.result == 'success' || needs.deploy_test.result == 'skipped')
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Container Apps extension
+        run: |
+          az extension add --name containerapp --upgrade
+
+      - name: Deploy prod environment
+        run: |
+          chmod +x ops/azure/deploy-from-ci.sh
+          ./ops/azure/deploy-from-ci.sh
+        env:
+          DEPLOYMENT_ENVIRONMENT: prod
+          IMAGE_TAG: ${{ github.event.inputs.image_tag || github.sha }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_BASE_NAME: ${{ vars.AZURE_BASE_NAME }}
+          AZURE_POSTGRES_ADMIN_USER: ${{ vars.AZURE_POSTGRES_ADMIN_USER }}
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_JSON_MODE: ${{ vars.LLM_JSON_MODE }}
+          LLM_TEMPERATURE: ${{ vars.LLM_TEMPERATURE }}
+          LLM_MAX_TOKENS: ${{ vars.LLM_MAX_TOKENS }}
+          REQUEST_TIMEOUT_SECONDS: ${{ vars.REQUEST_TIMEOUT_SECONDS }}
+          MCP_CLIENT_AUTH_TOKEN: ${{ secrets.MCP_CLIENT_AUTH_TOKEN }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ vars.SMTP_FROM }}

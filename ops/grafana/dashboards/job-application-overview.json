@@ -1,0 +1,56 @@
+{
+  "title": "Job Application Copilot Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Application Runs",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (status) (job_application_runs_total)", "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Run Duration",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "rate(job_application_run_duration_seconds_sum[5m]) / rate(job_application_run_duration_seconds_count[5m])", "legendFormat": "avg duration" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Blocked Runs",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum(job_application_runs_total{status=\"blocked\"})" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Awaiting Approval",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+      "targets": [
+        { "expr": "sum(job_application_runs_total{status=\"awaiting_approval\"})" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Artifacts Generated",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "sum(job_application_artifacts_total)" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Submission Packets",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
+      "targets": [
+        { "expr": "sum(job_application_submissions_total)" }
+      ]
+    }
+  ]
+}

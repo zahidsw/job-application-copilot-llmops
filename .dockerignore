@@ -1,0 +1,15 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+data
+dashboard-ui/dist
+dashboard-ui/node_modules
+ops/azure/generated

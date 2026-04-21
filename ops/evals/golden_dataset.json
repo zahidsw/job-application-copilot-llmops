@@ -1,0 +1,18 @@
+[
+  {
+    "case_id": "senior-dotnet-zurich",
+    "company": "Contoso Labs",
+    "role": "Senior .NET Platform Engineer",
+    "job_text": "Required: C#, .NET, ASP.NET Core, Azure, SQL, Docker, mentoring, English, authorization to work in Switzerland.",
+    "expected_min_score": 70,
+    "expected_status": "awaiting_approval"
+  },
+  {
+    "case_id": "sap-onsite-blocked",
+    "company": "Example Manufacturing",
+    "role": "ERP Support Specialist",
+    "job_text": "Required: SAP Basis, German C1, 5 days onsite in Munich, no sponsorship available.",
+    "expected_min_score": 0,
+    "expected_status": "blocked"
+  }
+]
