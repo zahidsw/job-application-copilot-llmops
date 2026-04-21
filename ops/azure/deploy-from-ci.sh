@@ -27,7 +27,7 @@ smtp_from="${SMTP_FROM:-}"
 
 acr_name="$(echo "${base_name}acr" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-50)"
 storage_account_name="$(echo "${base_name}files" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-24)"
-container_apps_env_name="${base_name}-env"
+container_apps_env_name="${AZURE_CONTAINER_APPS_ENVIRONMENT_NAME:-${base_name}-env}"
 log_analytics_name="${base_name}-logs"
 postgres_server_name="${base_name}-pg"
 shared_deployment_name="jobapp-${deployment_environment}-shared"

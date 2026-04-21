@@ -115,6 +115,8 @@ The branch flow now works like a GitLab-style promotion pipeline:
 
 Use GitHub Environments named `test` and `prod`. If you want production to pause for human approval after `main` passes validation, add a protection rule on the `prod` environment. If you want fully automatic production deployment, leave `prod` without required reviewers.
 
+The current Azure for Students quota only allows one Container Apps Environment in the subscription. For that reason, `prod` can reuse the existing test Container Apps Environment by setting `AZURE_CONTAINER_APPS_ENVIRONMENT_NAME=jobappcopilottest-env` while still deploying separate `jobappcopilotprod-*` Container Apps.
+
 ### Validation Gates
 
 Every branch deployment must pass the `Validate` job first. The validation job:
@@ -167,6 +169,7 @@ Create these repository variables. The Azure naming variables are optional becau
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_LOCATION`
 - `AZURE_BASE_NAME`
+- `AZURE_CONTAINER_APPS_ENVIRONMENT_NAME`
 - `AZURE_POSTGRES_ADMIN_USER`
 - `LLM_JSON_MODE`
 - `LLM_TEMPERATURE`

@@ -4,6 +4,7 @@ param(
     [string]$ResourceGroup = "",
     [string]$Location = "switzerlandnorth",
     [string]$BaseName = "",
+    [string]$ContainerAppsEnvironmentName = "",
     [string]$SharedEnvPath = "C:\Users\marya\Documents\New project\multi-agent-research-llmops\.env",
     [string]$PostgresAdminUser = "jobappadmin",
     [string]$PostgresAdminPassword,
@@ -127,7 +128,7 @@ if (-not $PostgresAdminPassword) {
 
 $acrName = Normalize-Name -Value "${BaseName}acr" -MaxLength 50
 $storageAccountName = Normalize-Name -Value "${BaseName}files" -MaxLength 24
-$containerAppsEnvironmentName = "${BaseName}-env"
+$containerAppsEnvironmentName = if ($ContainerAppsEnvironmentName) { $ContainerAppsEnvironmentName } else { "${BaseName}-env" }
 $logAnalyticsWorkspaceName = "${BaseName}-logs"
 $postgresServerName = "${BaseName}-pg"
 $sharedDeploymentName = "jobapp-$environmentLabel-shared"
