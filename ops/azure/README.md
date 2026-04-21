@@ -117,6 +117,8 @@ Use GitHub Environments named `test` and `prod`. If you want production to pause
 
 The current Azure for Students quota only allows one Container Apps Environment in the subscription. For that reason, `prod` can reuse the existing test Container Apps Environment by setting `AZURE_CONTAINER_APPS_ENVIRONMENT_NAME=jobappcopilottest-env` while still deploying separate `jobappcopilotprod-*` Container Apps.
 
+Because test and prod can share that one Container Apps Environment, the deploy jobs use the same GitHub concurrency group. That keeps Azure environment updates sequential and avoids `ManagedEnvironmentOperationInProgress` failures.
+
 ### Validation Gates
 
 Every branch deployment must pass the `Validate` job first. The validation job:

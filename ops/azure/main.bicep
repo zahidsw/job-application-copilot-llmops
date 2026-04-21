@@ -135,7 +135,7 @@ var dashboardAppName = '${baseName}-dashboard'
 var mlflowAppName = '${baseName}-mlflow'
 var prometheusAppName = '${baseName}-prometheus'
 var grafanaAppName = '${baseName}-grafana'
-var sharedStorageName = 'sharedfiles'
+var sharedStorageName = '${baseName}-sharedfiles'
 
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var appDatabaseUrl = 'postgresql+psycopg://${postgresAdminUser}:${uriComponent(postgresAdminPassword)}@${postgresHost}:5432/${appDatabaseName}?sslmode=require'

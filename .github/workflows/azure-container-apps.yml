@@ -80,8 +80,8 @@ jobs:
     needs:
       - validate
     concurrency:
-      group: job-application-copilot-test
-      cancel-in-progress: true
+      group: job-application-copilot-shared-containerapps-env
+      cancel-in-progress: false
     if: >
       needs.validate.result == 'success' &&
       (
@@ -152,7 +152,7 @@ jobs:
       - validate
       - deploy_test
     concurrency:
-      group: job-application-copilot-prod
+      group: job-application-copilot-shared-containerapps-env
       cancel-in-progress: false
     if: >
       always() &&
