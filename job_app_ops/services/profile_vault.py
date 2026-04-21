@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
-
-from docx import Document
-from pypdf import PdfReader
 
 from job_app_ops.config import Settings
 from job_app_ops.schemas import CandidateProfile, CandidateSkill, ProfileAssetKind, ProfileAssetRecord, ProfileVault
@@ -68,6 +66,7 @@ class ProfileVaultService:
                 file_name=file_name,
                 stored_path=str(stored_path),
                 extracted_text_excerpt=excerpt,
+                extracted_text=_excerpt(extracted_text, length=12000),
             )
         )
 
@@ -80,6 +79,39 @@ class ProfileVaultService:
 
         vault.profile = _enrich_profile_from_text(vault.profile, extracted_text, file_name)
         return self._save_vault(vault)
+
+    def get_reference_texts(
+        self,
+        profile_id: str = "primary-candidate",
+        kinds: Iterable[ProfileAssetKind] | None = None,
+        limit: int = 5,
+    ) -> list[str]:
+        vault = self.get_vault(profile_id)
+        allowed_kinds = set(kinds or [])
+        texts: list[str] = []
+
+        for asset in vault.assets:
+            if allowed_kinds and asset.kind not in allowed_kinds:
+                continue
+
+            text = asset.extracted_text or ""
+            if not text and asset.stored_path:
+                stored_path = Path(asset.stored_path)
+                if stored_path.is_file():
+                    try:
+                        text = _extract_text(stored_path, stored_path.read_bytes())
+                    except Exception:
+                        text = ""
+            if not text:
+                text = asset.extracted_text_excerpt
+
+            normalized = _excerpt(text, length=12000)
+            if normalized:
+                texts.append(normalized)
+            if len(texts) >= limit:
+                break
+
+        return texts
 
     def _ensure_vault(self) -> None:
         if self._vault_path.exists():
@@ -100,16 +132,23 @@ def _extract_text(path: Path, content: bytes) -> str:
     if suffix in {".txt", ".md", ".html", ".htm"}:
         return content.decode("utf-8-sig", errors="ignore")
     if suffix == ".docx":
+        from docx import Document
+
         document = Document(io.BytesIO(content))
         return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text.strip())
     if suffix == ".pdf":
+        from pypdf import PdfReader
+
         reader = PdfReader(io.BytesIO(content))
         return "\n".join(page.extract_text() or "" for page in reader.pages)
     return content.decode("utf-8-sig", errors="ignore")
 
 
-def _excerpt(text: str, length: int = 900) -> str:
-    normalized = re.sub(r"\s+", " ", text).strip()
+def _excerpt(text: str, length: int = 6000) -> str:
+    lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
+    normalized = "\n".join(line for line in lines if line)
+    if not normalized:
+        normalized = re.sub(r"\s+", " ", text).strip()
     return normalized[:length]
 
 
@@ -144,7 +183,7 @@ def _enrich_profile_from_text(profile: CandidateProfile, text: str, file_name: s
             CandidateSkill(
                 name=_display_skill(raw_skill),
                 years=0,
-                evidence=f"Inferred from uploaded file {file_name}",
+                evidence=_skill_evidence(text, raw_skill) or f"Mentioned in uploaded profile asset {file_name}",
             )
         )
 
@@ -167,6 +206,41 @@ def _enrich_profile_from_text(profile: CandidateProfile, text: str, file_name: s
             "achievements": achievements[:12],
         }
     )
+
+
+def _skill_evidence(text: str, raw_skill: str) -> str:
+    pattern = re.compile(re.escape(raw_skill), flags=re.IGNORECASE)
+    for line in _evidence_lines(text):
+        if pattern.search(line):
+            return line[:220]
+    return ""
+
+
+def _evidence_lines(text: str) -> list[str]:
+    candidates: list[str] = []
+    for raw_line in re.split(r"[\n\r]+|(?<=[.!?])\s+", text):
+        line = re.sub(r"\s+", " ", raw_line).strip(" -\u2022\t")
+        if len(line) < 20:
+            continue
+        if any(
+            marker in line.lower()
+            for marker in (
+                "develop",
+                "build",
+                "operate",
+                "designed",
+                "delivered",
+                "maintained",
+                "technical skills",
+                "cloud",
+                "data",
+                "backend",
+                "production",
+                "automation",
+            )
+        ):
+            candidates.append(line)
+    return candidates
 
 
 def _merge_profiles(primary: CandidateProfile, fallback: CandidateProfile) -> CandidateProfile:

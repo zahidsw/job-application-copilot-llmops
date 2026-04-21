@@ -70,6 +70,7 @@ class ProfileAssetRecord(BaseModel):
     file_name: str
     stored_path: str
     extracted_text_excerpt: str = ""
+    extracted_text: str = ""
     imported_at: datetime = Field(default_factory=datetime.utcnow)
 
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from job_app_ops.agents.job_application_agents import JobApplicationAgents
+from job_app_ops.agents.llm_client import LLMClient
 from job_app_ops.config import Settings, get_settings
 from job_app_ops.database import RunRepository, init_db
 from job_app_ops.graph.workflow import JobApplicationWorkflow
@@ -42,7 +43,7 @@ def get_runtime() -> Runtime:
     init_db(settings)
     tools = MCPRemoteToolClient(settings)
     profile_vault = ProfileVaultService(settings)
-    agents = JobApplicationAgents(settings, profile_vault)
+    agents = JobApplicationAgents(settings, profile_vault, LLMClient(settings))
     exporter = ArtifactExporter(settings)
     repository = RunRepository(settings)
     tracker = MLflowTracker(settings)
