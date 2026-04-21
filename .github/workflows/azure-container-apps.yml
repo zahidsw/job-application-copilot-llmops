@@ -143,6 +143,11 @@ jobs:
           SMTP_USER: ${{ vars.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM: ${{ vars.SMTP_FROM }}
+          ENTRA_AUTH_ENABLED: ${{ vars.ENTRA_AUTH_ENABLED }}
+          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          ENTRA_ALLOWED_GROUP_IDS: ${{ vars.ENTRA_ALLOWED_GROUP_IDS }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
 
   deploy_prod:
     name: Deploy prod
@@ -212,3 +217,8 @@ jobs:
           SMTP_USER: ${{ vars.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           SMTP_FROM: ${{ vars.SMTP_FROM }}
+          ENTRA_AUTH_ENABLED: ${{ vars.ENTRA_AUTH_ENABLED }}
+          ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+          ENTRA_ALLOWED_GROUP_IDS: ${{ vars.ENTRA_ALLOWED_GROUP_IDS }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}

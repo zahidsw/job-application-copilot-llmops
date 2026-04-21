@@ -24,6 +24,18 @@ smtp_port="${SMTP_PORT:-587}"
 smtp_user="${SMTP_USER:-}"
 smtp_password="${SMTP_PASSWORD:-}"
 smtp_from="${SMTP_FROM:-}"
+entra_auth_enabled="${ENTRA_AUTH_ENABLED:-false}"
+entra_tenant_id="${ENTRA_TENANT_ID:-}"
+entra_client_id="${ENTRA_CLIENT_ID:-}"
+entra_client_secret="${ENTRA_CLIENT_SECRET:-}"
+entra_allowed_group_ids="${ENTRA_ALLOWED_GROUP_IDS:-}"
+
+if [[ "${entra_auth_enabled}" == "true" ]]; then
+  : "${entra_tenant_id:?ENTRA_TENANT_ID is required when ENTRA_AUTH_ENABLED=true}"
+  : "${entra_client_id:?ENTRA_CLIENT_ID is required when ENTRA_AUTH_ENABLED=true}"
+  : "${entra_client_secret:?ENTRA_CLIENT_SECRET is required when ENTRA_AUTH_ENABLED=true}"
+  : "${entra_allowed_group_ids:?ENTRA_ALLOWED_GROUP_IDS is required when ENTRA_AUTH_ENABLED=true}"
+fi
 
 retry() {
   local max_attempts=3
@@ -80,6 +92,11 @@ dashboard_image="${acr_login_server}/jobapp-dashboard:${image_tag}"
 mlflow_image="${acr_login_server}/jobapp-mlflow:${image_tag}"
 prometheus_image="${acr_login_server}/jobapp-prometheus:${image_tag}"
 grafana_image="${acr_login_server}/jobapp-grafana:${image_tag}"
+entra_allowed_groups_json='[]'
+
+if [[ "${entra_auth_enabled}" == "true" ]]; then
+  entra_allowed_groups_json="$(printf '%s' "${entra_allowed_group_ids}" | tr ',' '\n' | sed '/^[[:space:]]*$/d' | jq -R . | jq -s .)"
+fi
 
 retry docker build -t "${app_image}" -f Dockerfile .
 retry docker push "${app_image}"
@@ -132,6 +149,11 @@ az deployment group create \
     smtpUser="${smtp_user}" \
     smtpPassword="${smtp_password}" \
     smtpFrom="${smtp_from}" \
+    enableEntraProtection="${entra_auth_enabled}" \
+    entraTenantId="${entra_tenant_id}" \
+    entraClientId="${entra_client_id}" \
+    entraClientSecret="${entra_client_secret}" \
+    entraAllowedGroupIds="${entra_allowed_groups_json}" \
   --output none
 
 outputs="$(az deployment group show --resource-group "${resource_group}" --name "${apps_deployment_name}" --query properties.outputs --output json)"

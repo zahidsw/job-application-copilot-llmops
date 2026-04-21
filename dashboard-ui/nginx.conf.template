@@ -10,6 +10,9 @@ server {
         proxy_http_version 1.1;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL $http_x_ms_client_principal;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL-ID $http_x_ms_client_principal_id;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL-NAME $http_x_ms_client_principal_name;
     }
 
     location = /live {
@@ -37,6 +40,9 @@ server {
         proxy_http_version 1.1;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL $http_x_ms_client_principal;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL-ID $http_x_ms_client_principal_id;
+        proxy_set_header X-MS-CLIENT-PRINCIPAL-NAME $http_x_ms_client_principal_name;
     }
 
     location / {

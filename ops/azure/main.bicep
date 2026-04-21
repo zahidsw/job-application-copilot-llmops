@@ -129,6 +129,22 @@ param smtpPassword string = ''
 @description('Optional SMTP from address.')
 param smtpFrom string = ''
 
+@description('Enable Microsoft Entra protection for external application surfaces.')
+param enableEntraProtection bool = false
+
+@description('Tenant ID used by Microsoft Entra sign-in.')
+param entraTenantId string = ''
+
+@description('Client ID of the Microsoft Entra application registration used for sign-in.')
+param entraClientId string = ''
+
+@secure()
+@description('Client secret of the Microsoft Entra application registration used for sign-in.')
+param entraClientSecret string = ''
+
+@description('Security group object IDs allowed to access protected external applications.')
+param entraAllowedGroupIds array = []
+
 var apiAppName = '${baseName}-api'
 var mcpAppName = '${baseName}-mcp'
 var dashboardAppName = '${baseName}-dashboard'
@@ -136,6 +152,8 @@ var mlflowAppName = '${baseName}-mlflow'
 var prometheusAppName = '${baseName}-prometheus'
 var grafanaAppName = '${baseName}-grafana'
 var sharedStorageName = '${baseName}-sharedfiles'
+var apiExternalIngress = !enableEntraProtection
+var entraIssuer = empty(entraTenantId) ? '' : 'https://login.microsoftonline.com/${entraTenantId}/v2.0'
 
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var appDatabaseUrl = 'postgresql+psycopg://${postgresAdminUser}:${uriComponent(postgresAdminPassword)}@${postgresHost}:5432/${appDatabaseName}?sslmode=require'
@@ -337,7 +355,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: true
+        external: apiExternalIngress
         allowInsecure: false
         targetPort: 8080
         transport: 'auto'
@@ -687,12 +705,17 @@ resource mlflowApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           identity: acrPullIdentity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'mlflow-backend-uri'
           value: mlflowBackendUri
         }
-      ]
+      ], enableEntraProtection ? [
+        {
+          name: 'entra-auth-client-secret'
+          value: entraClientSecret
+        }
+      ] : [])
     }
     template: {
       containers: [
@@ -772,6 +795,12 @@ resource prometheusApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps
           identity: acrPullIdentity.id
         }
       ]
+      secrets: enableEntraProtection ? [
+        {
+          name: 'entra-auth-client-secret'
+          value: entraClientSecret
+        }
+      ] : []
     }
     template: {
       containers: [
@@ -839,12 +868,17 @@ resource grafanaApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           identity: acrPullIdentity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'grafana-admin-password'
           value: grafanaAdminPassword
         }
-      ]
+      ], enableEntraProtection ? [
+        {
+          name: 'entra-auth-client-secret'
+          value: entraClientSecret
+        }
+      ] : [])
     }
     template: {
       containers: [
@@ -908,6 +942,12 @@ resource dashboardApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps)
           identity: acrPullIdentity.id
         }
       ]
+      secrets: enableEntraProtection ? [
+        {
+          name: 'entra-auth-client-secret'
+          value: entraClientSecret
+        }
+      ] : []
     }
     template: {
       containers: [
@@ -953,6 +993,202 @@ resource dashboardApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps)
       scale: {
         minReplicas: 1
         maxReplicas: 1
+      }
+    }
+  }
+}
+
+resource dashboardAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (deployApps && enableEntraProtection) {
+  parent: dashboardApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+      runtimeVersion: '~1'
+    }
+    globalValidation: {
+      redirectToProvider: 'azureActiveDirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    httpSettings: {
+      requireHttps: true
+      routes: {
+        apiPrefix: '/.auth'
+      }
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraClientId
+          clientSecretSettingName: 'entra-auth-client-secret'
+          openIdIssuer: entraIssuer
+        }
+        validation: {
+          allowedAudiences: [
+            entraClientId
+          ]
+          defaultAuthorizationPolicy: {
+            allowedPrincipals: {
+              groups: entraAllowedGroupIds
+            }
+          }
+          jwtClaimChecks: {
+            allowedGroups: entraAllowedGroupIds
+          }
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: true
+      }
+    }
+  }
+}
+
+resource grafanaAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (deployApps && enableEntraProtection) {
+  parent: grafanaApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+      runtimeVersion: '~1'
+    }
+    globalValidation: {
+      redirectToProvider: 'azureActiveDirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    httpSettings: {
+      requireHttps: true
+      routes: {
+        apiPrefix: '/.auth'
+      }
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraClientId
+          clientSecretSettingName: 'entra-auth-client-secret'
+          openIdIssuer: entraIssuer
+        }
+        validation: {
+          allowedAudiences: [
+            entraClientId
+          ]
+          defaultAuthorizationPolicy: {
+            allowedPrincipals: {
+              groups: entraAllowedGroupIds
+            }
+          }
+          jwtClaimChecks: {
+            allowedGroups: entraAllowedGroupIds
+          }
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: true
+      }
+    }
+  }
+}
+
+resource mlflowAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (deployApps && enableEntraProtection) {
+  parent: mlflowApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+      runtimeVersion: '~1'
+    }
+    globalValidation: {
+      redirectToProvider: 'azureActiveDirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    httpSettings: {
+      requireHttps: true
+      routes: {
+        apiPrefix: '/.auth'
+      }
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraClientId
+          clientSecretSettingName: 'entra-auth-client-secret'
+          openIdIssuer: entraIssuer
+        }
+        validation: {
+          allowedAudiences: [
+            entraClientId
+          ]
+          defaultAuthorizationPolicy: {
+            allowedPrincipals: {
+              groups: entraAllowedGroupIds
+            }
+          }
+          jwtClaimChecks: {
+            allowedGroups: entraAllowedGroupIds
+          }
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: true
+      }
+    }
+  }
+}
+
+resource prometheusAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (deployApps && enableEntraProtection) {
+  parent: prometheusApp
+  name: 'current'
+  properties: {
+    platform: {
+      enabled: true
+      runtimeVersion: '~1'
+    }
+    globalValidation: {
+      redirectToProvider: 'azureActiveDirectory'
+      unauthenticatedClientAction: 'RedirectToLoginPage'
+    }
+    httpSettings: {
+      requireHttps: true
+      routes: {
+        apiPrefix: '/.auth'
+      }
+    }
+    identityProviders: {
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          clientId: entraClientId
+          clientSecretSettingName: 'entra-auth-client-secret'
+          openIdIssuer: entraIssuer
+        }
+        validation: {
+          allowedAudiences: [
+            entraClientId
+          ]
+          defaultAuthorizationPolicy: {
+            allowedPrincipals: {
+              groups: entraAllowedGroupIds
+            }
+          }
+          jwtClaimChecks: {
+            allowedGroups: entraAllowedGroupIds
+          }
+        }
+      }
+    }
+    login: {
+      tokenStore: {
+        enabled: true
       }
     }
   }
