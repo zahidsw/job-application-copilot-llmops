@@ -18,21 +18,88 @@ KNOWN_SKILLS = [
     "azure",
     "sql",
     "docker",
+    "kubernetes",
+    "ci/cd",
+    "git",
+    "linux",
     "wpf",
     "devexpress",
     "akka.net",
     "python",
+    "java",
+    "javascript",
+    "typescript",
+    "vue.js",
+    "nuxt",
+    "react",
+    "angular",
     "langgraph",
     "fastapi",
     "llmops",
+    "ai agents",
+    "ai tools",
+    "github copilot",
+    "cursor",
+    "claude code",
     "playwright",
     "microsoft graph",
     "gmail api",
     "mlflow",
     "prometheus",
     "grafana",
+    "rest api",
+    "graphql",
+    "data engineering",
+    "data pipelines",
+    "data modeling",
+    "data analysis",
+    "analytics",
+    "reporting",
+    "dashboards",
+    "etl",
+    "elt",
+    "crm",
+    "erp",
+    "data science",
+    "statistics",
+    "requirements engineering",
+    "business analysis",
+    "testing",
+    "documentation",
+    "information security",
     "sap basis",
 ]
+
+SKILL_ALIASES = {
+    ".net": [".net", "dotnet"],
+    "asp.net core": ["asp.net core", "backend-diensten mit asp.net core"],
+    "vue.js": ["vue.js", "vuejs", "vue"],
+    "nuxt": ["nuxt", "nuxt.js"],
+    "react": ["react", "react.js"],
+    "rest api": ["rest api", "rest apis", "rest / graphql", "api-driven", "apis"],
+    "graphql": ["graphql", "rest / graphql"],
+    "ai agents": ["ki-agenten", "ai agents", "ki agenten", "agenten"],
+    "ai tools": ["ki-tools", "ai tools", "ai-first", "aifirst"],
+    "github copilot": ["github copilot", "copilot"],
+    "data engineering": ["data engineering", "datenengineering", "data engineer"],
+    "data pipelines": ["datenpipelines", "daten-pipelines", "data pipelines", "pipelines"],
+    "data modeling": ["datenmodelle", "datenmodell", "modellierst datenstrukturen", "data modeling", "data models"],
+    "data analysis": ["datenanalyse", "analysen", "data analysis", "analytics"],
+    "analytics": ["analytics", "analysen", "auswertungen"],
+    "reporting": ["reporting", "reports", "auswertungen"],
+    "dashboards": ["dashboards", "dashboard"],
+    "etl": ["etl", "etl/elt"],
+    "elt": ["elt", "etl/elt"],
+    "crm": ["crm"],
+    "erp": ["erp"],
+    "data science": ["data science"],
+    "statistics": ["statistik", "statistics"],
+    "requirements engineering": ["anforderungen", "requirements", "requirements engineering"],
+    "business analysis": ["fachbereiche", "business analysis", "decision makers", "entscheidungstrager", "entscheidungsträger"],
+    "testing": ["testing", "tests", "code-generierung, testing", "system testing"],
+    "documentation": ["dokumentation", "documentation"],
+    "information security": ["informationssicherheit", "information security"],
+}
 
 FETCH_HEADERS = {
     "User-Agent": (
@@ -178,12 +245,16 @@ def extract_job_requirements(description: str) -> JobRequirements:
     preferred = _extract_skills_from_line(text, "preferred")
 
     if not required:
-        required = [skill for skill in KNOWN_SKILLS if skill in text][:6]
+        required = _extract_skills_from_sections(text)
+    if not required:
+        required = _extract_skills_anywhere(text)
+    if not preferred:
+        preferred = _extract_preferred_skills(text, required)
 
     languages = []
-    if "english" in text:
+    if "english" in text or "englisch" in text:
         languages.append("English")
-    if "german" in text:
+    if "german" in text or "deutsch" in text:
         languages.append("German")
 
     education = []
@@ -191,12 +262,18 @@ def extract_job_requirements(description: str) -> JobRequirements:
         education.append("Bachelor's degree")
     if "master" in text:
         education.append("Master's degree")
+    if "informatik" in text or "wirtschaftsinformatik" in text:
+        education.append("Computer science or business informatics")
+    if "data science" in text or "statistik" in text:
+        education.append("Data science or statistics background")
 
     hard_blockers = []
     if "no sponsorship" in text or "sponsorship unavailable" in text:
         hard_blockers.append("Role states that sponsorship is unavailable.")
     if "german c1" in text:
         hard_blockers.append("Role requires German C1 proficiency.")
+    if "sehr gute deutschkenntnisse" in text:
+        hard_blockers.append("Role asks for very good German language skills; operator should verify level.")
 
     questions = [
         "Why are you interested in this role?",
@@ -222,7 +299,7 @@ def _extract_skills_from_line(text: str, marker: str) -> list[str]:
         if marker not in line:
             continue
         for skill in KNOWN_SKILLS:
-            if skill in line:
+            if _skill_in_text(skill, line):
                 matches.append(skill)
     seen: set[str] = set()
     unique: list[str] = []
@@ -230,6 +307,85 @@ def _extract_skills_from_line(text: str, marker: str) -> list[str]:
         if item not in seen:
             unique.append(item)
             seen.add(item)
+    return unique
+
+
+def _extract_skills_from_sections(text: str) -> list[str]:
+    section_markers = (
+        "qualifikationen",
+        "was du mitbringst",
+        "requirements",
+        "anforderungen",
+        "deine aufgaben",
+        "verantwortung",
+        "dein aufgabenbereich",
+        "your responsibilities",
+        "what you bring",
+        "was du mitbringst",
+    )
+    stop_markers = ("benefits", "was dich erwartet", "show more", "seniority level", "employment type", "referrals")
+    matches: list[str] = []
+    for marker in section_markers:
+        start = text.find(marker)
+        if start < 0:
+            continue
+        end_candidates = [text.find(stop, start + len(marker)) for stop in stop_markers]
+        end_candidates = [item for item in end_candidates if item > start]
+        end = min(end_candidates) if end_candidates else min(len(text), start + 1800)
+        section = text[start:end]
+        section_matches: list[tuple[int, str]] = []
+        for skill in KNOWN_SKILLS:
+            position = _skill_position(skill, section)
+            if position >= 0:
+                section_matches.append((position, skill))
+        matches.extend(skill for _, skill in sorted(section_matches, key=lambda item: item[0]))
+    return _dedupe_skills(matches)[:14]
+
+
+def _extract_skills_anywhere(text: str) -> list[str]:
+    scored: list[tuple[int, str]] = []
+    for skill in KNOWN_SKILLS:
+        position = _skill_position(skill, text)
+        if position >= 0:
+            scored.append((position, skill))
+    return [skill for _, skill in sorted(scored, key=lambda item: item[0])[:14]]
+
+
+def _extract_preferred_skills(text: str, required: list[str]) -> list[str]:
+    preferred_markers = ("nice to have", "preferred", "von vorteil", "bonus", "was dich erwartet")
+    matches: list[str] = []
+    for marker in preferred_markers:
+        start = text.find(marker)
+        if start < 0:
+            continue
+        section = text[start : start + 900]
+        matches.extend(skill for skill in KNOWN_SKILLS if _skill_in_text(skill, section))
+    required_set = {item.lower() for item in required}
+    return [skill for skill in _dedupe_skills(matches) if skill.lower() not in required_set][:6]
+
+
+def _skill_position(skill: str, text: str) -> int:
+    if skill in {"git", "crm", "erp"}:
+        match = re.search(rf"\b{re.escape(skill)}\b", text)
+        return match.start() if match else -1
+
+    positions = [text.find(alias) for alias in SKILL_ALIASES.get(skill, [skill])]
+    positions = [position for position in positions if position >= 0]
+    return min(positions) if positions else -1
+
+
+def _skill_in_text(skill: str, text: str) -> bool:
+    return _skill_position(skill, text) >= 0
+
+
+def _dedupe_skills(skills: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for skill in skills:
+        key = skill.lower()
+        if key not in seen:
+            unique.append(skill)
+            seen.add(key)
     return unique
 
 
@@ -269,10 +425,32 @@ def _display_skill(skill: str) -> str:
         ".net": ".NET",
         "asp.net core": "ASP.NET Core",
         "sql": "SQL",
+        "ci/cd": "CI/CD",
         "wpf": "WPF",
         "akka.net": "Akka.NET",
+        "fastapi": "FastAPI",
+        "llmops": "LLMOps",
+        "rest api": "REST APIs",
+        "graphql": "GraphQL",
+        "vue.js": "Vue.js",
+        "nuxt": "Nuxt",
+        "github copilot": "GitHub Copilot",
+        "ai agents": "AI agents",
+        "ai tools": "AI tools",
+        "crm": "CRM",
+        "erp": "ERP",
+        "etl": "ETL",
+        "elt": "ELT",
         "microsoft graph": "Microsoft Graph",
         "gmail api": "Gmail API",
+        "data engineering": "Data engineering",
+        "data pipelines": "Data pipelines",
+        "data modeling": "Data modeling",
+        "data analysis": "Data analysis",
+        "data science": "Data science",
+        "requirements engineering": "Requirements engineering",
+        "business analysis": "Business analysis",
+        "information security": "Information security",
     }
     return mapping.get(skill, skill.title())
 
