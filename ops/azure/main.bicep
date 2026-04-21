@@ -1039,11 +1039,6 @@ resource dashboardAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if
         }
       }
     }
-    login: {
-      tokenStore: {
-        enabled: true
-      }
-    }
   }
 }
 
@@ -1086,11 +1081,6 @@ resource grafanaAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (
             allowedGroups: entraAllowedGroupIds
           }
         }
-      }
-    }
-    login: {
-      tokenStore: {
-        enabled: true
       }
     }
   }
@@ -1137,11 +1127,6 @@ resource mlflowAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (d
         }
       }
     }
-    login: {
-      tokenStore: {
-        enabled: true
-      }
-    }
   }
 }
 
@@ -1184,11 +1169,6 @@ resource prometheusAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = i
             allowedGroups: entraAllowedGroupIds
           }
         }
-      }
-    }
-    login: {
-      tokenStore: {
-        enabled: true
       }
     }
   }
