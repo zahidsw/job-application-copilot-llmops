@@ -165,6 +165,7 @@ var apiAppName = '${baseName}-api'
 var mcpAppName = '${baseName}-mcp'
 var dashboardAppName = '${baseName}-dashboard'
 var mlflowAppName = '${baseName}-mlflow'
+var mlflowTrackerAppName = '${baseName}-mlflow-int'
 var prometheusAppName = '${baseName}-prometheus'
 var grafanaAppName = '${baseName}-grafana'
 var sharedStorageName = '${baseName}-sharedfiles'
@@ -180,6 +181,7 @@ var mlflowBackendUri = 'postgresql+psycopg://${postgresAdminUser}:${uriComponent
 
 var apiInternalUrl = 'http://${apiAppName}'
 var mcpInternalUrl = 'http://${mcpAppName}'
+var mlflowTrackerInternalUrl = 'http://${mlflowTrackerAppName}'
 var prometheusInternalUrl = 'http://${prometheusAppName}'
 var sharedMountPath = '/mnt/shared'
 
@@ -528,7 +530,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             }
             {
               name: 'MLFLOW_TRACKING_URI'
-              value: 'http://${mlflowAppName}'
+              value: mlflowTrackerInternalUrl
             }
             {
               name: 'MLFLOW_EXPERIMENT_NAME'
@@ -703,6 +705,91 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         minReplicas: 1
         maxReplicas: 2
       }
+    }
+  }
+}
+
+resource mlflowTrackerApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
+  name: mlflowTrackerAppName
+  location: location
+  tags: commonTags
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${acrPullIdentity.id}': {}
+    }
+  }
+  dependsOn: [
+    acrPullIdentityAssignment
+  ]
+  properties: {
+    managedEnvironmentId: containerAppsEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        allowInsecure: false
+        targetPort: 5000
+        transport: 'auto'
+      }
+      registries: [
+        {
+          server: containerRegistry.properties.loginServer
+          identity: acrPullIdentity.id
+        }
+      ]
+      secrets: [
+        {
+          name: 'mlflow-backend-uri'
+          value: mlflowBackendUri
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'mlflow-tracker'
+          image: mlflowImage
+          command: [
+            'sh'
+          ]
+          args: [
+            '-c'
+            'mlflow server --host 0.0.0.0 --port 5000 --workers 1 --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" --artifacts-destination "$MLFLOW_ARTIFACT_ROOT" --serve-artifacts --allowed-hosts "*" --cors-allowed-origins "*"'
+          ]
+          env: [
+            {
+              name: 'MLFLOW_BACKEND_STORE_URI'
+              secretRef: 'mlflow-backend-uri'
+            }
+            {
+              name: 'MLFLOW_ARTIFACT_ROOT'
+              value: '${sharedMountPath}/mlflow'
+            }
+          ]
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          volumeMounts: [
+            {
+              volumeName: 'shared-data'
+              mountPath: sharedMountPath
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+      }
+      volumes: [
+        {
+          name: 'shared-data'
+          storageType: 'AzureFile'
+          storageName: sharedFiles.name
+        }
+      ]
     }
   }
 }
