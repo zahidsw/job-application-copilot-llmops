@@ -219,6 +219,44 @@ export function RunDetailPage() {
           <h3>Pipeline execution trace</h3>
           <StageTimeline stages={run.stage_summaries} />
         </section>
+
+        <section className="panel">
+          <p className="eyebrow">Similar jobs</p>
+          <h3>Internet jobs that look at least 80% similar</h3>
+          {run.similar_jobs.length ? (
+            <div className="artifact-list">
+              {run.similar_jobs.map((job) => (
+                <article key={`${job.source_url}-${job.similarity_score}`} className="artifact-row">
+                  <div>
+                    <p className="artifact-label">{job.source_name}</p>
+                    <h4>{job.role}</h4>
+                    <p className="subtle-copy">
+                      {job.company || 'Unknown company'} · {formatScore(job.similarity_score)}
+                    </p>
+                    {job.matched_skills.length ? (
+                      <p className="subtle-copy">Shared skills: {job.matched_skills.join(', ')}</p>
+                    ) : null}
+                    {job.snippet ? <p>{job.snippet}</p> : null}
+                  </div>
+                  <div className="hero-actions">
+                    <a className="ghost-button" href={job.source_url} target="_blank" rel="noreferrer">
+                      Open source
+                    </a>
+                    <Link className="primary-button" to={buildSimilarJobLaunchUrl(job)}>
+                      Start tailored run
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-state">
+              {run.request.discover_similar_jobs
+                ? 'No similar jobs passed the 80% threshold for this run.'
+                : 'This run was not configured to discover similar jobs.'}
+            </p>
+          )}
+        </section>
       </section>
 
       <aside className="detail-side">
@@ -276,4 +314,22 @@ export function RunDetailPage() {
       </aside>
     </div>
   )
+}
+
+function buildSimilarJobLaunchUrl(job: ApplicationResult['similar_jobs'][number]) {
+  const normalizedSource = job.source_name.toLowerCase()
+  const sourceType =
+    normalizedSource.includes('linkedin') || normalizedSource.includes('indeed') ? 'saved_search' : 'company_site'
+  const params = new URLSearchParams({
+    source_url: job.source_url,
+    source_type: sourceType,
+    submission_channel: job.requires_auth ? 'manual_handoff' : 'company_site',
+    destination: job.source_url,
+    company: job.company || '',
+    role: job.role,
+    source_name: job.source_name,
+    discover_similar_jobs: 'true',
+    similar_job_limit: '5',
+  })
+  return `/submit?${params.toString()}`
 }

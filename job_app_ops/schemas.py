@@ -95,6 +95,8 @@ class JobApplicationRequest(BaseModel):
     destination: str = ""
     submission_channel: SubmissionChannel = SubmissionChannel.company_site
     job_text: str = ""
+    discover_similar_jobs: bool = False
+    similar_job_limit: int = 5
 
 
 class JobUrlApplicationRequest(BaseModel):
@@ -107,6 +109,8 @@ class JobUrlApplicationRequest(BaseModel):
     source_type: JobSourceType = JobSourceType.company_site
     destination: str = ""
     submission_channel: SubmissionChannel = SubmissionChannel.company_site
+    discover_similar_jobs: bool = False
+    similar_job_limit: int = 5
 
 
 class JobFetchResult(BaseModel):
@@ -158,6 +162,20 @@ class MatchAssessment(BaseModel):
     hard_blockers: list[str] = Field(default_factory=list)
 
 
+class SimilarJobMatch(BaseModel):
+    role: str
+    company: str = ""
+    source_name: str
+    source_url: str
+    similarity_score: int
+    location_mode: str = "unknown"
+    matched_skills: list[str] = Field(default_factory=list)
+    snippet: str = ""
+    source_approved: bool = True
+    source_policy_note: str = ""
+    requires_auth: bool = False
+
+
 class GeneratedArtifact(BaseModel):
     artifact_type: str
     file_name: str
@@ -193,6 +211,7 @@ class ApplicationResult(BaseModel):
     opportunity: JobOpportunity
     requirements: JobRequirements
     assessment: MatchAssessment
+    similar_jobs: list[SimilarJobMatch] = Field(default_factory=list)
     artifacts: list[GeneratedArtifact] = Field(default_factory=list)
     approval_packet: ApprovalPacket | None = None
     submission_record: SubmissionRecord | None = None

@@ -21,6 +21,7 @@ from job_app_ops.schemas import (
     JobRequirements,
     MatchAssessment,
     RunStatus,
+    SimilarJobMatch,
 )
 from job_app_ops.services.exporter import ArtifactExporter
 from job_app_ops.services.mcp_remote_client import MCPRemoteToolClient
@@ -34,6 +35,7 @@ class ApplicationState(TypedDict, total=False):
     opportunity: JobOpportunity
     requirements: JobRequirements
     assessment: MatchAssessment
+    similar_jobs: list[SimilarJobMatch]
     artifacts: list[GeneratedArtifact]
     approval_packet: ApprovalPacket
     status: RunStatus
@@ -66,12 +68,14 @@ class JobApplicationWorkflow:
         graph.add_node("matcher", self._matcher_node)
         graph.add_node("tailorer", self._tailorer_node)
         graph.add_node("reviewer", self._reviewer_node)
+        graph.add_node("similar_jobs", self._similar_jobs_node)
         graph.set_entry_point("source_intake")
         graph.add_edge("source_intake", "requirements")
         graph.add_edge("requirements", "matcher")
         graph.add_edge("matcher", "tailorer")
         graph.add_edge("tailorer", "reviewer")
-        graph.add_edge("reviewer", END)
+        graph.add_edge("reviewer", "similar_jobs")
+        graph.add_edge("similar_jobs", END)
         return graph.compile()
 
     async def run(self, request: JobApplicationRequest) -> ApplicationResult:
@@ -101,6 +105,7 @@ class JobApplicationWorkflow:
             opportunity=final_state["opportunity"],
             requirements=final_state["requirements"],
             assessment=final_state["assessment"],
+            similar_jobs=final_state.get("similar_jobs", []),
             artifacts=artifacts,
             approval_packet=final_state.get("approval_packet"),
             stage_summaries=final_state.get("stage_summaries", []),
@@ -233,4 +238,39 @@ class JobApplicationWorkflow:
             "status": status,
             "stage_summaries": state.get("stage_summaries", [])
             + [AgentStageSummary(stage="reviewer", summary=packet.summary, duration_seconds=round(perf_counter() - start, 3))],
+        }
+
+    async def _similar_jobs_node(self, state: ApplicationState) -> ApplicationState:
+        start = perf_counter()
+        request = state["request"]
+        if not request.discover_similar_jobs:
+            return {
+                "similar_jobs": [],
+                "stage_summaries": state.get("stage_summaries", [])
+                + [
+                    AgentStageSummary(
+                        stage="similar_jobs",
+                        summary="Skipped similar-job discovery because the option was not enabled.",
+                        duration_seconds=round(perf_counter() - start, 3),
+                    )
+                ],
+            }
+
+        matches = await self.tools.find_similar_jobs(
+            opportunity=state["opportunity"],
+            requirements=state["requirements"],
+            limit=request.similar_job_limit,
+        )
+        summary = (
+            f"Found {len(matches)} similar jobs scored at or above 80% similarity."
+            if matches
+            else "No similar jobs cleared the 80% similarity threshold."
+        )
+        metrics = dict(state.get("metrics", {}))
+        metrics["similar_job_count"] = float(len(matches))
+        return {
+            "similar_jobs": matches,
+            "metrics": metrics,
+            "stage_summaries": state.get("stage_summaries", [])
+            + [AgentStageSummary(stage="similar_jobs", summary=summary, duration_seconds=round(perf_counter() - start, 3))],
         }

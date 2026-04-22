@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 
 from job_app_ops.config import Settings
-from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SubmissionChannel
+from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SimilarJobMatch, SubmissionChannel
 from job_app_ops.services.metrics import remote_tool_requests_total
 
 
@@ -61,6 +61,24 @@ class MCPRemoteToolClient:
             tool="fetch_job",
         )
         return JobFetchResult.model_validate(data)
+
+    async def find_similar_jobs(
+        self,
+        *,
+        opportunity: JobOpportunity,
+        requirements: JobRequirements,
+        limit: int,
+    ) -> list[SimilarJobMatch]:
+        data = await self._post_json(
+            "/api/v1/tools/find-similar-jobs",
+            {
+                "opportunity": opportunity.model_dump(mode="json"),
+                "requirements": requirements.model_dump(mode="json"),
+                "limit": limit,
+            },
+            tool="find_similar_jobs",
+        )
+        return [SimilarJobMatch.model_validate(item) for item in data]
 
     async def _post_json(self, path: str, payload: dict[str, object], *, tool: str) -> dict[str, object]:
         try:

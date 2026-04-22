@@ -203,6 +203,8 @@ def _prepare_url_request(runtime: Runtime, request: JobUrlApplicationRequest) ->
         destination=request.destination or request.source_url,
         submission_channel=request.submission_channel,
         job_text="",
+        discover_similar_jobs=request.discover_similar_jobs,
+        similar_job_limit=request.similar_job_limit,
     )
 
 

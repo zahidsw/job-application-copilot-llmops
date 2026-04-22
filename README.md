@@ -8,12 +8,13 @@ See `docs/ARCHITECTURE.md` for the direct mapping from the research reference pr
 
 ## What it implements
 
-- a `LangGraph` workflow with five agents:
+- a `LangGraph` workflow with six agents:
   - `source_intake`
   - `requirements`
   - `matcher`
   - `tailorer`
   - `reviewer`
+  - `similar_jobs`
 - a separate remote tool service for:
   - source-policy checks
   - job normalization
@@ -86,6 +87,9 @@ flowchart LR
 
 5. `reviewer`
    Produces the final approval package and stops before dispatch.
+
+6. `similar_jobs`
+   When enabled for a run, searches public job pages for closely matching roles and returns ranked links for follow-up tailoring.
 
 After approval, a separate submission action can:
 

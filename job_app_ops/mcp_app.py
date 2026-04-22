@@ -5,9 +5,15 @@ from fastapi.responses import Response
 import uvicorn
 
 from job_app_ops.config import get_settings
-from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SubmissionChannel
+from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SimilarJobMatch, SubmissionChannel
 from job_app_ops.services.metrics import render_metrics
-from job_app_ops.services.tool_gateway import evaluate_source_policy, extract_job_requirements, fetch_job_from_url, normalize_job_post
+from job_app_ops.services.tool_gateway import (
+    evaluate_source_policy,
+    extract_job_requirements,
+    fetch_job_from_url,
+    find_similar_jobs,
+    normalize_job_post,
+)
 
 
 settings = get_settings()
@@ -61,6 +67,14 @@ async def extract_requirements(payload: dict[str, str]):
 @app.post("/api/v1/tools/fetch-job", response_model=JobFetchResult)
 async def fetch_job(payload: dict[str, str]):
     return fetch_job_from_url(str(payload.get("source_url", "")))
+
+
+@app.post("/api/v1/tools/find-similar-jobs", response_model=list[SimilarJobMatch])
+async def similar_jobs(payload: dict[str, object]):
+    opportunity = JobOpportunity.model_validate(payload.get("opportunity", {}))
+    requirements = JobRequirements.model_validate(payload.get("requirements", {}))
+    limit = int(payload.get("limit", 5) or 5)
+    return find_similar_jobs(settings=settings, opportunity=opportunity, requirements=requirements, limit=limit)
 
 
 def run_mcp() -> None:

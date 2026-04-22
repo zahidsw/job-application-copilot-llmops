@@ -75,6 +75,8 @@ export interface JobUrlApplicationRequest {
   source_type: JobSourceType
   destination?: string
   submission_channel: SubmissionChannel
+  discover_similar_jobs?: boolean
+  similar_job_limit?: number
 }
 
 export interface JobApplicationRequest {
@@ -87,6 +89,8 @@ export interface JobApplicationRequest {
   destination: string
   submission_channel: SubmissionChannel
   job_text: string
+  discover_similar_jobs?: boolean
+  similar_job_limit?: number
 }
 
 export interface JobFetchResult {
@@ -138,6 +142,20 @@ export interface MatchAssessment {
   hard_blockers: string[]
 }
 
+export interface SimilarJobMatch {
+  role: string
+  company: string
+  source_name: string
+  source_url: string
+  similarity_score: number
+  location_mode: string
+  matched_skills: string[]
+  snippet: string
+  source_approved: boolean
+  source_policy_note: string
+  requires_auth: boolean
+}
+
 export interface GeneratedArtifact {
   artifact_type: string
   file_name: string
@@ -173,6 +191,7 @@ export interface ApplicationResult {
   opportunity: JobOpportunity
   requirements: JobRequirements
   assessment: MatchAssessment
+  similar_jobs: SimilarJobMatch[]
   artifacts: GeneratedArtifact[]
   approval_packet: ApprovalPacket | null
   submission_record: SubmissionRecord | null

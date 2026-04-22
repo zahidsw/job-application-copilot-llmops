@@ -59,6 +59,7 @@ This is the control plane for the recruiting workflow.
 - `matcher`
 - `tailorer`
 - `reviewer`
+- `similar_jobs`
 
 The graph persists run outputs, exports artifacts, and emits observability events.
 

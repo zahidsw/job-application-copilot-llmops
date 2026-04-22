@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { JobApplicationRequest, JobFetchResult, JobSourceType, JobUrlApplicationRequest, SubmissionChannel } from '../types'
 
@@ -22,6 +22,8 @@ const defaultUrlForm: JobUrlApplicationRequest = {
   company: '',
   role: '',
   source_name: '',
+  discover_similar_jobs: false,
+  similar_job_limit: 5,
 }
 
 const defaultManualForm: JobApplicationRequest = {
@@ -34,10 +36,13 @@ const defaultManualForm: JobApplicationRequest = {
   destination: '',
   submission_channel: 'company_site',
   job_text: '',
+  discover_similar_jobs: false,
+  similar_job_limit: 5,
 }
 
 export function SubmitPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<'url' | 'manual'>('url')
   const [urlForm, setUrlForm] = useState<JobUrlApplicationRequest>(defaultUrlForm)
   const [manualForm, setManualForm] = useState<JobApplicationRequest>(defaultManualForm)
@@ -45,6 +50,32 @@ export function SubmitPage() {
   const [submitting, setSubmitting] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const sourceUrl = searchParams.get('source_url')?.trim() ?? ''
+    if (!sourceUrl) {
+      return
+    }
+
+    const sourceType = (searchParams.get('source_type') as JobSourceType | null) ?? defaultUrlForm.source_type
+    const submissionChannel =
+      (searchParams.get('submission_channel') as SubmissionChannel | null) ?? defaultUrlForm.submission_channel
+    const similarJobLimit = Number(searchParams.get('similar_job_limit') ?? defaultUrlForm.similar_job_limit)
+
+    setMode('url')
+    setUrlForm((current) => ({
+      ...current,
+      source_url: sourceUrl,
+      company: searchParams.get('company') ?? current.company,
+      role: searchParams.get('role') ?? current.role,
+      source_name: searchParams.get('source_name') ?? current.source_name,
+      destination: searchParams.get('destination') ?? current.destination,
+      source_type: sourceType,
+      submission_channel: submissionChannel,
+      discover_similar_jobs: parseBooleanParam(searchParams.get('discover_similar_jobs')),
+      similar_job_limit: Number.isFinite(similarJobLimit) && similarJobLimit > 0 ? similarJobLimit : defaultUrlForm.similar_job_limit,
+    }))
+  }, [searchParams])
 
   async function handlePreview() {
     if (!urlForm.source_url.trim()) {
@@ -226,6 +257,36 @@ export function SubmitPage() {
                   onChange={(event) => setUrlForm((current) => ({ ...current, source_name: event.target.value }))}
                 />
               </label>
+              <label className="field">
+                <span>Discover similar jobs</span>
+                <select
+                  value={urlForm.discover_similar_jobs ? 'yes' : 'no'}
+                  onChange={(event) =>
+                    setUrlForm((current) => ({
+                      ...current,
+                      discover_similar_jobs: event.target.value === 'yes',
+                    }))
+                  }
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Similar job limit</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={urlForm.similar_job_limit ?? 5}
+                  onChange={(event) =>
+                    setUrlForm((current) => ({
+                      ...current,
+                      similar_job_limit: Number(event.target.value) || 5,
+                    }))
+                  }
+                />
+              </label>
             </div>
           </section>
         ) : (
@@ -324,6 +385,36 @@ export function SubmitPage() {
                   onChange={(event) => setManualForm((current) => ({ ...current, job_text: event.target.value }))}
                 />
               </label>
+              <label className="field">
+                <span>Discover similar jobs</span>
+                <select
+                  value={manualForm.discover_similar_jobs ? 'yes' : 'no'}
+                  onChange={(event) =>
+                    setManualForm((current) => ({
+                      ...current,
+                      discover_similar_jobs: event.target.value === 'yes',
+                    }))
+                  }
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Similar job limit</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={manualForm.similar_job_limit ?? 5}
+                  onChange={(event) =>
+                    setManualForm((current) => ({
+                      ...current,
+                      similar_job_limit: Number(event.target.value) || 5,
+                    }))
+                  }
+                />
+              </label>
             </div>
           </section>
         )}
@@ -355,4 +446,11 @@ export function SubmitPage() {
       </aside>
     </div>
   )
+}
+
+function parseBooleanParam(value: string | null) {
+  if (!value) {
+    return false
+  }
+  return value.toLowerCase() === 'true' || value.toLowerCase() === 'yes' || value === '1'
 }

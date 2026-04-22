@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import re
+from difflib import SequenceMatcher
 from html import unescape
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 
 from bs4 import BeautifulSoup
 import httpx
 
 from job_app_ops.config import Settings
-from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SubmissionChannel
+from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SimilarJobMatch, SubmissionChannel
 
 
 KNOWN_SKILLS = [
@@ -108,6 +109,9 @@ FETCH_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+SEARCH_RESULT_LIMIT = 12
+SIMILAR_JOB_MIN_SCORE = 80
 
 
 def evaluate_source_policy(
@@ -290,6 +294,78 @@ def extract_job_requirements(description: str) -> JobRequirements:
         hard_blockers=hard_blockers,
         application_questions=questions,
     )
+
+
+def find_similar_jobs(
+    *,
+    settings: Settings,
+    opportunity: JobOpportunity,
+    requirements: JobRequirements,
+    limit: int = 5,
+) -> list[SimilarJobMatch]:
+    query = _build_similar_job_query(opportunity, requirements)
+    results = _search_public_job_results(query)
+    matches: list[SimilarJobMatch] = []
+    seen_urls: set[str] = set()
+    original_url = opportunity.source_url.strip().lower()
+
+    for result in results[:SEARCH_RESULT_LIMIT]:
+        result_url = result["source_url"].strip()
+        normalized_url = result_url.lower()
+        if not result_url or normalized_url in seen_urls or normalized_url == original_url:
+            continue
+        seen_urls.add(normalized_url)
+
+        source_name = result["source_name"] or urlparse(result_url).netloc.replace("www.", "")
+        source_policy = evaluate_source_policy(
+            settings=settings,
+            source_url=result_url,
+            source_name=source_name,
+            source_type=JobSourceType.company_site,
+            submission_channel=SubmissionChannel.manual_handoff,
+        )
+        if not source_policy["source_approved"]:
+            continue
+
+        fetched = fetch_job_from_url(result_url)
+        candidate_text = fetched.job_text or result["snippet"]
+        if not candidate_text:
+            continue
+
+        candidate_requirements = extract_job_requirements(candidate_text)
+        matched_skills = _shared_skills(requirements, candidate_requirements)
+        similarity_score = _compute_job_similarity(
+            source_opportunity=opportunity,
+            source_requirements=requirements,
+            candidate_role=fetched.role or result["role"],
+            candidate_description=candidate_text,
+            candidate_requirements=candidate_requirements,
+            matched_skills=matched_skills,
+        )
+        if similarity_score < SIMILAR_JOB_MIN_SCORE:
+            continue
+
+        matches.append(
+            SimilarJobMatch(
+                role=fetched.role or result["role"] or "Similar role",
+                company=fetched.company or result["company"],
+                source_name=fetched.source_name or source_name,
+                source_url=fetched.final_url or result_url,
+                similarity_score=similarity_score,
+                location_mode=_infer_location_mode(candidate_text),
+                matched_skills=matched_skills[:6],
+                snippet=_excerpt_text(candidate_text, 260),
+                source_approved=True,
+                source_policy_note=str(source_policy["source_policy_note"]),
+                requires_auth=fetched.requires_auth,
+            )
+        )
+
+        if len(matches) >= max(limit, 1):
+            break
+
+    matches.sort(key=lambda item: item.similarity_score, reverse=True)
+    return matches[: max(limit, 1)]
 
 
 def _extract_skills_from_line(text: str, marker: str) -> list[str]:
@@ -506,3 +582,166 @@ def _infer_role_company(html: str, final_url: str) -> tuple[str, str]:
 
     host = urlparse(final_url).netloc.replace("www.", "")
     return "", host
+
+
+def _build_similar_job_query(opportunity: JobOpportunity, requirements: JobRequirements) -> str:
+    parts = [opportunity.role]
+    if requirements.required_skills:
+        parts.append(" ".join(requirements.required_skills[:4]))
+    elif requirements.preferred_skills:
+        parts.append(" ".join(requirements.preferred_skills[:3]))
+    if opportunity.location_mode in {"remote", "hybrid"}:
+        parts.append(opportunity.location_mode)
+    parts.append("jobs")
+    return " ".join(part.strip() for part in parts if part and part.strip())
+
+
+def _search_public_job_results(query: str) -> list[dict[str, str]]:
+    url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    with httpx.Client(follow_redirects=True, timeout=20, headers=FETCH_HEADERS) as client:
+        response = client.get(url)
+        response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    results: list[dict[str, str]] = []
+    for node in soup.select(".result"):
+        title_link = node.select_one("a.result__a") or node.select_one(".result__title a")
+        if not title_link:
+            continue
+        href = title_link.get("href") or ""
+        result_url = _extract_search_result_url(href)
+        if not result_url:
+            continue
+
+        title = _collapse_whitespace(title_link.get_text(" ", strip=True))
+        snippet_node = node.select_one(".result__snippet")
+        snippet = _collapse_whitespace(snippet_node.get_text(" ", strip=True) if snippet_node else "")
+        role, company = _split_title_company(title)
+        results.append(
+            {
+                "role": role,
+                "company": company,
+                "source_name": urlparse(result_url).netloc.replace("www.", ""),
+                "source_url": result_url,
+                "snippet": snippet,
+            }
+        )
+
+    return results
+
+
+def _extract_search_result_url(href: str) -> str:
+    if not href:
+        return ""
+    parsed = urlparse(href)
+    if "duckduckgo.com" in parsed.netloc:
+        params = parse_qs(parsed.query)
+        uddg = params.get("uddg")
+        if uddg:
+            return unescape(uddg[0])
+    return href
+
+
+def _split_title_company(title: str) -> tuple[str, str]:
+    for separator in (" - ", " | ", " at ", " @ "):
+        if separator in title:
+            left, right = title.split(separator, 1)
+            return left.strip(), right.strip()
+    return title.strip(), ""
+
+
+def _compute_job_similarity(
+    *,
+    source_opportunity: JobOpportunity,
+    source_requirements: JobRequirements,
+    candidate_role: str,
+    candidate_description: str,
+    candidate_requirements: JobRequirements,
+    matched_skills: list[str],
+) -> int:
+    role_similarity = _weighted_text_similarity(source_opportunity.role, candidate_role)
+    source_required = {skill.lower() for skill in source_requirements.required_skills}
+    candidate_skill_set = {skill.lower() for skill in candidate_requirements.required_skills + candidate_requirements.preferred_skills}
+    skill_similarity = (
+        len(source_required & candidate_skill_set) / max(len(source_required), 1)
+        if source_required
+        else _keyword_overlap(source_opportunity.normalized_description, candidate_description)
+    )
+    source_languages = {language.lower() for language in source_requirements.language_requirements}
+    candidate_languages = {language.lower() for language in candidate_requirements.language_requirements}
+    language_similarity = 1.0 if not source_languages else len(source_languages & candidate_languages) / max(len(source_languages), 1)
+    location_similarity = 1.0 if source_opportunity.location_mode == _infer_location_mode(candidate_description) else 0.4
+    keyword_similarity = _keyword_overlap(source_opportunity.normalized_description, candidate_description)
+
+    score = (
+        role_similarity * 35
+        + skill_similarity * 40
+        + language_similarity * 10
+        + location_similarity * 5
+        + keyword_similarity * 10
+    )
+    if matched_skills:
+        score += min(10, len(matched_skills) * 2)
+    return max(0, min(100, round(score)))
+
+
+def _shared_skills(source_requirements: JobRequirements, candidate_requirements: JobRequirements) -> list[str]:
+    source_by_key = {
+        skill.lower(): skill
+        for skill in source_requirements.required_skills + source_requirements.preferred_skills
+    }
+    shared: list[str] = []
+    for candidate_skill in candidate_requirements.required_skills + candidate_requirements.preferred_skills:
+        normalized = candidate_skill.lower()
+        if normalized in source_by_key and source_by_key[normalized] not in shared:
+            shared.append(source_by_key[normalized])
+    return shared
+
+
+def _weighted_text_similarity(source_text: str, candidate_text: str) -> float:
+    source_terms = " ".join(sorted(_significant_terms(source_text)))
+    candidate_terms = " ".join(sorted(_significant_terms(candidate_text)))
+    if not source_terms or not candidate_terms:
+        return 0.0
+    return SequenceMatcher(None, source_terms, candidate_terms).ratio()
+
+
+def _keyword_overlap(source_text: str, candidate_text: str) -> float:
+    source_terms = _significant_terms(source_text)
+    candidate_terms = _significant_terms(candidate_text)
+    if not source_terms or not candidate_terms:
+        return 0.0
+    return len(source_terms & candidate_terms) / max(len(source_terms), 1)
+
+
+def _significant_terms(text: str) -> set[str]:
+    terms = re.findall(r"[a-zA-Z0-9.+#/]{3,}", (text or "").lower())
+    stop_words = {
+        "with",
+        "your",
+        "that",
+        "have",
+        "will",
+        "this",
+        "from",
+        "jobs",
+        "role",
+        "team",
+        "work",
+        "remote",
+        "hybrid",
+        "company",
+        "senior",
+        "developer",
+        "engineer",
+    }
+    return {term for term in terms if term not in stop_words}
+
+
+def _excerpt_text(text: str, length: int) -> str:
+    normalized = _collapse_whitespace(BeautifulSoup(text or "", "html.parser").get_text(" ", strip=True))
+    return normalized[:length]
+
+
+def _collapse_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
