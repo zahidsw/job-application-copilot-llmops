@@ -89,7 +89,7 @@ flowchart LR
    Produces the final approval package and stops before dispatch.
 
 6. `similar_jobs`
-   When enabled for a run, searches public job pages for closely matching roles and returns ranked links for follow-up tailoring.
+   When enabled for a run, searches public job pages for closely matching roles and returns ranked links for follow-up tailoring. The default provider is `SerpAPI`, with DuckDuckGo fallback if no SerpAPI key is configured.
 
 After approval, a separate submission action can:
 
@@ -110,6 +110,12 @@ After approval, a separate submission action can:
 - `mcp` for the remote tool service
 - `evaluator` for scheduled evaluation runs
 - `prometheus` and `grafana` for observability
+
+Similar-job discovery configuration:
+
+- `SIMILAR_JOB_SEARCH_PROVIDER=serpapi`
+- `SERPAPI_API_KEY=...`
+- `SIMILAR_JOB_MIN_SCORE=80`
 
 ## API surface
 

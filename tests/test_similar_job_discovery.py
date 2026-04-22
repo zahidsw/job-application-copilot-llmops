@@ -90,11 +90,10 @@ def test_find_similar_jobs_returns_high_similarity_matches(monkeypatch):
     assert "SQL" in matches[0].matched_skills
 
 
-def test_search_public_job_results_prefers_google_programmable_search(monkeypatch):
+def test_search_public_job_results_prefers_serpapi(monkeypatch):
     settings = Settings(
-        similar_job_search_provider="google_programmable_search",
-        google_programmable_search_api_key="test-key",
-        google_programmable_search_cx="test-cx",
+        similar_job_search_provider="serpapi",
+        serpapi_api_key="test-key",
     )
     expected = [
         {
@@ -106,9 +105,27 @@ def test_search_public_job_results_prefers_google_programmable_search(monkeypatc
         }
     ]
 
-    monkeypatch.setattr(tool_gateway, "_search_google_programmable_results", lambda query, runtime_settings: expected)
+    monkeypatch.setattr(tool_gateway, "_search_serpapi_results", lambda query, runtime_settings: expected)
     monkeypatch.setattr(tool_gateway, "_search_duckduckgo_results", lambda query: [])
 
     results = tool_gateway._search_public_job_results("platform engineer python", settings)
 
     assert results == expected
+
+
+def test_evaluate_source_policy_allows_company_sites():
+    settings = Settings(
+        allowed_source_domains="greenhouse.io,lever.co,workday.com",
+        manual_only_domains="linkedin.com,indeed.com",
+    )
+
+    result = tool_gateway.evaluate_source_policy(
+        settings=settings,
+        source_url="https://careers.contoso.com/jobs/platform-engineer",
+        source_name="careers.contoso.com",
+        source_type=JobSourceType.company_site,
+        submission_channel=SubmissionChannel.company_site,
+    )
+
+    assert result["source_approved"] is True
+    assert result["source_policy_note"] == "Source approved."

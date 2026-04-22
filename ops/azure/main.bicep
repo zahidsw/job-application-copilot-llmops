@@ -97,17 +97,14 @@ param llmMaxTokens string = '1400'
 param requestTimeoutSeconds string = '60'
 
 @description('Preferred search provider used for similar job discovery.')
-param similarJobSearchProvider string = 'google_programmable_search'
+param similarJobSearchProvider string = 'serpapi'
 
 @description('Minimum similarity score required before a related job is shown.')
 param similarJobMinScore string = '80'
 
 @secure()
-@description('API key for Google Programmable Search.')
-param googleProgrammableSearchApiKey string = ''
-
-@description('Search engine identifier (cx) for Google Programmable Search.')
-param googleProgrammableSearchCx string = ''
+@description('API key for SerpAPI search.')
+param serpApiKey string = ''
 
 @secure()
 @description('Shared token the API uses when calling the tool service.')
@@ -200,7 +197,7 @@ var mcpInternalUrl = 'http://${mcpAppName}'
 var mlflowTrackerInternalUrl = 'http://${mlflowTrackerAppName}'
 var prometheusInternalUrl = 'http://${prometheusAppName}'
 var sharedMountPath = '/mnt/shared'
-var hasGoogleProgrammableSearchApiKey = !empty(googleProgrammableSearchApiKey)
+var hasSerpApiKey = !empty(serpApiKey)
 
 var dashboardPublicUrl = deployApps ? 'https://${dashboardApp.properties.configuration.ingress.fqdn}' : ''
 var apiPublicUrl = deployApps ? 'https://${apiApp.properties.configuration.ingress.fqdn}' : ''
@@ -433,10 +430,10 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           name: 'smtp-password'
           value: empty(smtpPassword) ? 'smtp-not-configured' : smtpPassword
         }
-      ], hasGoogleProgrammableSearchApiKey ? [
+      ], hasSerpApiKey ? [
         {
-          name: 'google-programmable-search-api-key'
-          value: googleProgrammableSearchApiKey
+          name: 'serpapi-api-key'
+          value: serpApiKey
         }
       ] : [])
     }
@@ -493,10 +490,6 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'SIMILAR_JOB_MIN_SCORE'
               value: similarJobMinScore
-            }
-            {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
-              value: googleProgrammableSearchCx
             }
             {
               name: 'LLM_PROVIDER'
@@ -598,14 +591,14 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               name: 'COMPANY_SITE_AUTO_OPEN'
               value: 'false'
             }
-          ], hasGoogleProgrammableSearchApiKey ? [
+          ], hasSerpApiKey ? [
             {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
-              secretRef: 'google-programmable-search-api-key'
+              name: 'SERPAPI_API_KEY'
+              secretRef: 'serpapi-api-key'
             }
           ] : [
             {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              name: 'SERPAPI_API_KEY'
               value: ''
             }
           ])
@@ -670,10 +663,10 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           name: 'llm-api-key'
           value: llmApiKey
         }
-      ], hasGoogleProgrammableSearchApiKey ? [
+      ], hasSerpApiKey ? [
         {
-          name: 'google-programmable-search-api-key'
-          value: googleProgrammableSearchApiKey
+          name: 'serpapi-api-key'
+          value: serpApiKey
         }
       ] : [])
     }
@@ -720,10 +713,6 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               value: similarJobMinScore
             }
             {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
-              value: googleProgrammableSearchCx
-            }
-            {
               name: 'LLM_PROVIDER'
               value: llmProvider
             }
@@ -755,14 +744,14 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               name: 'REQUEST_TIMEOUT_SECONDS'
               value: requestTimeoutSeconds
             }
-          ], hasGoogleProgrammableSearchApiKey ? [
+          ], hasSerpApiKey ? [
             {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
-              secretRef: 'google-programmable-search-api-key'
+              name: 'SERPAPI_API_KEY'
+              secretRef: 'serpapi-api-key'
             }
           ] : [
             {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              name: 'SERPAPI_API_KEY'
               value: ''
             }
           ])

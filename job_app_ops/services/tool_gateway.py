@@ -129,14 +129,13 @@ def evaluate_source_policy(
             host = ""
 
     identifier = host or source_name.lower().replace(" ", "-") or source_type.value
-    allowed = source_type == JobSourceType.manual_entry or any(
-        identifier.endswith(domain) for domain in settings.allowed_source_domain_set
-    )
+    known_allowed_domain = any(identifier.endswith(domain) for domain in settings.allowed_source_domain_set)
+    allowed = source_type in {JobSourceType.manual_entry, JobSourceType.company_site} or known_allowed_domain
     manual_only = any(identifier.endswith(domain) for domain in settings.manual_only_domain_set)
     note = "Source approved."
 
     if not allowed:
-        note = f"Source {identifier} is not on the allowlist."
+        note = f"Source {identifier} is not approved for automated intake."
     elif manual_only and submission_channel != SubmissionChannel.manual_handoff:
         allowed = False
         note = f"Source {identifier} must use manual handoff."
@@ -597,32 +596,30 @@ def _build_similar_job_query(opportunity: JobOpportunity, requirements: JobRequi
 
 def _search_public_job_results(query: str, settings: Settings | None = None) -> list[dict[str, str]]:
     provider = (settings.similar_job_search_provider if settings else "duckduckgo_html").strip().lower()
-    if provider == "google_programmable_search" and settings:
+    if provider == "serpapi" and settings:
         try:
-            google_results = _search_google_programmable_results(query, settings)
-            if google_results:
-                return google_results
+            serpapi_results = _search_serpapi_results(query, settings)
+            if serpapi_results:
+                return serpapi_results
         except Exception:
             pass
 
     return _search_duckduckgo_results(query)
 
 
-def _search_google_programmable_results(query: str, settings: Settings) -> list[dict[str, str]]:
-    api_key = settings.google_programmable_search_api_key.strip()
-    cx = settings.google_programmable_search_cx.strip()
-    if not api_key or not cx:
+def _search_serpapi_results(query: str, settings: Settings) -> list[dict[str, str]]:
+    api_key = settings.serpapi_api_key.strip()
+    if not api_key:
         return []
 
     with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
         response = client.get(
-            "https://customsearch.googleapis.com/customsearch/v1",
+            "https://serpapi.com/search.json",
             params={
-                "key": api_key,
-                "cx": cx,
+                "api_key": api_key,
+                "engine": "google",
                 "q": query,
                 "num": min(10, SEARCH_RESULT_LIMIT),
-                "safe": "active",
                 "hl": "en",
             },
         )
@@ -630,19 +627,45 @@ def _search_google_programmable_results(query: str, settings: Settings) -> list[
 
     payload = response.json()
     results: list[dict[str, str]] = []
-    for item in payload.get("items", []) or []:
+    for item in payload.get("organic_results", []) or []:
         result_url = str(item.get("link", "")).strip()
         if not result_url:
             continue
         title = _collapse_whitespace(str(item.get("title", "")))
         snippet = _collapse_whitespace(str(item.get("snippet", "")))
-        display_link = _collapse_whitespace(str(item.get("displayLink", "")))
+        display_link = _collapse_whitespace(str(item.get("displayed_link", "")))
         role, company = _split_title_company(title)
         results.append(
             {
                 "role": role,
                 "company": company,
                 "source_name": display_link or urlparse(result_url).netloc.replace("www.", ""),
+                "source_url": result_url,
+                "snippet": snippet,
+            }
+        )
+
+    if results:
+        return results
+
+    for item in payload.get("jobs_results", []) or []:
+        related_links = item.get("related_links") or item.get("apply_options") or []
+        result_url = ""
+        for link_item in related_links:
+            result_url = str(link_item.get("link", "")).strip()
+            if result_url:
+                break
+        if not result_url:
+            continue
+
+        title = _collapse_whitespace(str(item.get("title", "")))
+        company = _collapse_whitespace(str(item.get("company_name", "")))
+        snippet = _collapse_whitespace(str(item.get("description", "")))
+        results.append(
+            {
+                "role": title or "Similar role",
+                "company": company,
+                "source_name": urlparse(result_url).netloc.replace("www.", ""),
                 "source_url": result_url,
                 "snippet": snippet,
             }
