@@ -6,4 +6,8 @@ window.__JOB_APP_CONFIG__ = {
   prometheusUrl: "__PROMETHEUS_URL__",
   apiReadyUrl: "__API_READY_URL__",
   toolReadyUrl: "__TOOL_READY_URL__",
+  entraAuthEnabled: "__ENTRA_AUTH_ENABLED__",
+  sessionAbsoluteTimeoutSeconds: "__SESSION_ABSOLUTE_TIMEOUT_SECONDS__",
+  sessionIdleTimeoutSeconds: "__SESSION_IDLE_TIMEOUT_SECONDS__",
+  sessionRefreshIntervalSeconds: "__SESSION_REFRESH_INTERVAL_SECONDS__",
 }

@@ -6,6 +6,10 @@ type RuntimeDashboardConfig = {
   prometheusUrl?: string
   apiReadyUrl?: string
   toolReadyUrl?: string
+  entraAuthEnabled?: string
+  sessionAbsoluteTimeoutSeconds?: string
+  sessionIdleTimeoutSeconds?: string
+  sessionRefreshIntervalSeconds?: string
 }
 
 type BrowserWindow = Window & {
@@ -19,6 +23,34 @@ function normalizeValue(value?: string) {
   return value
 }
 
+function normalizeBoolean(value?: string) {
+  const normalized = normalizeValue(value)?.trim().toLowerCase()
+  if (!normalized) {
+    return undefined
+  }
+  if (normalized === 'true') {
+    return true
+  }
+  if (normalized === 'false') {
+    return false
+  }
+  return undefined
+}
+
+function normalizeNumber(value?: string) {
+  const normalized = normalizeValue(value)?.trim()
+  if (!normalized) {
+    return undefined
+  }
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined
+  }
+
+  return parsed
+}
+
 const runtimeConfig = ((window as BrowserWindow).__JOB_APP_CONFIG__ ?? {}) as RuntimeDashboardConfig
 
 export const appRuntimeConfig = {
@@ -29,4 +61,8 @@ export const appRuntimeConfig = {
   prometheusUrl: normalizeValue(runtimeConfig.prometheusUrl),
   apiReadyUrl: normalizeValue(runtimeConfig.apiReadyUrl) ?? '/ready',
   toolReadyUrl: normalizeValue(runtimeConfig.toolReadyUrl) ?? '/tool-api/ready',
+  entraAuthEnabled: normalizeBoolean(runtimeConfig.entraAuthEnabled) ?? false,
+  sessionAbsoluteTimeoutSeconds: normalizeNumber(runtimeConfig.sessionAbsoluteTimeoutSeconds),
+  sessionIdleTimeoutSeconds: normalizeNumber(runtimeConfig.sessionIdleTimeoutSeconds),
+  sessionRefreshIntervalSeconds: normalizeNumber(runtimeConfig.sessionRefreshIntervalSeconds),
 }

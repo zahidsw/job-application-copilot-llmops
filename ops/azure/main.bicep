@@ -145,6 +145,22 @@ param entraClientSecret string = ''
 @description('Security group object IDs allowed to access protected external applications.')
 param entraAllowedGroupIds array = []
 
+@secure()
+@description('SAS URL for the blob container used to persist Easy Auth tokens for silent refresh.')
+param entraTokenStoreSasUrl string = ''
+
+@description('Absolute authenticated session lifetime for protected Entra-backed surfaces.')
+param entraSessionCookieExpiration string = '00:30:00'
+
+@description('Absolute timeout in seconds enforced by the dashboard session guard.')
+param entraSessionAbsoluteTimeoutSeconds string = '1800'
+
+@description('Idle timeout in seconds enforced by the dashboard session guard.')
+param entraSessionIdleTimeoutSeconds string = '900'
+
+@description('Silent refresh cadence in seconds enforced by the dashboard session guard while the window remains active.')
+param entraSessionRefreshIntervalSeconds string = '300'
+
 var apiAppName = '${baseName}-api'
 var mcpAppName = '${baseName}-mcp'
 var dashboardAppName = '${baseName}-dashboard'
@@ -154,6 +170,9 @@ var grafanaAppName = '${baseName}-grafana'
 var sharedStorageName = '${baseName}-sharedfiles'
 var apiExternalIngress = !enableEntraProtection
 var entraIssuer = empty(entraTenantId) ? '' : 'https://login.microsoftonline.com/${entraTenantId}/v2.0'
+var entraClientSecretName = 'entra-auth-client-secret'
+var entraTokenStoreSasSecretName = 'entra-token-store-sas-url'
+var entraTokenStoreContainerName = 'entratokens'
 
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var appDatabaseUrl = 'postgresql+psycopg://${postgresAdminUser}:${uriComponent(postgresAdminPassword)}@${postgresHost}:5432/${appDatabaseName}?sslmode=require'
@@ -243,6 +262,18 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
     largeFileSharesState: 'Enabled'
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  name: '${storageAccount.name}/default'
+}
+
+resource entraTokenStoreContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: entraTokenStoreContainerName
+  parent: blobService
+  properties: {
+    publicAccess: 'None'
   }
 }
 
@@ -712,7 +743,7 @@ resource mlflowApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         }
       ], enableEntraProtection ? [
         {
-          name: 'entra-auth-client-secret'
+          name: entraClientSecretName
           value: entraClientSecret
         }
       ] : [])
@@ -797,7 +828,7 @@ resource prometheusApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps
       ]
       secrets: enableEntraProtection ? [
         {
-          name: 'entra-auth-client-secret'
+          name: entraClientSecretName
           value: entraClientSecret
         }
       ] : []
@@ -875,7 +906,7 @@ resource grafanaApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         }
       ], enableEntraProtection ? [
         {
-          name: 'entra-auth-client-secret'
+          name: entraClientSecretName
           value: entraClientSecret
         }
       ] : [])
@@ -944,8 +975,12 @@ resource dashboardApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps)
       ]
       secrets: enableEntraProtection ? [
         {
-          name: 'entra-auth-client-secret'
+          name: entraClientSecretName
           value: entraClientSecret
+        }
+        {
+          name: entraTokenStoreSasSecretName
+          value: entraTokenStoreSasUrl
         }
       ] : []
     }
@@ -983,6 +1018,22 @@ resource dashboardApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps)
               name: 'PUBLIC_TOOL_READY_URL'
               value: '/tool-api/ready'
             }
+            {
+              name: 'PUBLIC_ENTRA_AUTH_ENABLED'
+              value: string(enableEntraProtection)
+            }
+            {
+              name: 'PUBLIC_SESSION_ABSOLUTE_TIMEOUT_SECONDS'
+              value: entraSessionAbsoluteTimeoutSeconds
+            }
+            {
+              name: 'PUBLIC_SESSION_IDLE_TIMEOUT_SECONDS'
+              value: entraSessionIdleTimeoutSeconds
+            }
+            {
+              name: 'PUBLIC_SESSION_REFRESH_INTERVAL_SECONDS'
+              value: entraSessionRefreshIntervalSeconds
+            }
           ]
           resources: {
             cpu: json('0.5')
@@ -1016,12 +1067,25 @@ resource dashboardAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if
         apiPrefix: '/.auth'
       }
     }
+    login: {
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: entraSessionCookieExpiration
+      }
+      tokenStore: {
+        enabled: true
+        tokenRefreshExtensionHours: 0
+        azureBlobStorage: {
+          sasUrlSettingName: entraTokenStoreSasSecretName
+        }
+      }
+    }
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
         registration: {
           clientId: entraClientId
-          clientSecretSettingName: 'entra-auth-client-secret'
+          clientSecretSettingName: entraClientSecretName
           openIdIssuer: entraIssuer
         }
         validation: {
@@ -1060,12 +1124,18 @@ resource grafanaAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (
         apiPrefix: '/.auth'
       }
     }
+    login: {
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: entraSessionCookieExpiration
+      }
+    }
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
         registration: {
           clientId: entraClientId
-          clientSecretSettingName: 'entra-auth-client-secret'
+          clientSecretSettingName: entraClientSecretName
           openIdIssuer: entraIssuer
         }
         validation: {
@@ -1104,12 +1174,18 @@ resource mlflowAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (d
         apiPrefix: '/.auth'
       }
     }
+    login: {
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: entraSessionCookieExpiration
+      }
+    }
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
         registration: {
           clientId: entraClientId
-          clientSecretSettingName: 'entra-auth-client-secret'
+          clientSecretSettingName: entraClientSecretName
           openIdIssuer: entraIssuer
         }
         validation: {
@@ -1148,12 +1224,18 @@ resource prometheusAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = i
         apiPrefix: '/.auth'
       }
     }
+    login: {
+      cookieExpiration: {
+        convention: 'FixedTime'
+        timeToExpiration: entraSessionCookieExpiration
+      }
+    }
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
         registration: {
           clientId: entraClientId
-          clientSecretSettingName: 'entra-auth-client-secret'
+          clientSecretSettingName: entraClientSecretName
           openIdIssuer: entraIssuer
         }
         validation: {

@@ -29,6 +29,11 @@ entra_tenant_id="${ENTRA_TENANT_ID:-}"
 entra_client_id="${ENTRA_CLIENT_ID:-}"
 entra_client_secret="${ENTRA_CLIENT_SECRET:-}"
 entra_allowed_group_ids="${ENTRA_ALLOWED_GROUP_IDS:-}"
+entra_session_cookie_expiration="${ENTRA_SESSION_COOKIE_EXPIRATION:-00:30:00}"
+entra_session_absolute_timeout_seconds="${ENTRA_SESSION_ABSOLUTE_TIMEOUT_SECONDS:-1800}"
+entra_session_idle_timeout_seconds="${ENTRA_SESSION_IDLE_TIMEOUT_SECONDS:-900}"
+entra_session_refresh_interval_seconds="${ENTRA_SESSION_REFRESH_INTERVAL_SECONDS:-300}"
+entra_token_store_sas_url=""
 
 if [[ "${entra_auth_enabled}" == "true" ]]; then
   : "${entra_tenant_id:?ENTRA_TENANT_ID is required when ENTRA_AUTH_ENABLED=true}"
@@ -55,6 +60,7 @@ retry() {
 
 acr_name="$(echo "${base_name}acr" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-50)"
 storage_account_name="$(echo "${base_name}files" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-24)"
+auth_token_container_name="entratokens"
 container_apps_env_name="${AZURE_CONTAINER_APPS_ENVIRONMENT_NAME:-${base_name}-env}"
 log_analytics_name="${base_name}-logs"
 postgres_server_name="${base_name}-pg"
@@ -83,6 +89,20 @@ az deployment group create \
     postgresAdminUser="${postgres_admin_user}" \
     postgresAdminPassword="${postgres_admin_password}" \
   --output none
+
+if [[ "${entra_auth_enabled}" == "true" ]]; then
+  storage_account_key="$(az storage account keys list --resource-group "${resource_group}" --account-name "${storage_account_name}" --query "[0].value" --output tsv)"
+  sas_expiry="$(python -c 'from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc) + timedelta(days=365 * 5)).strftime("%Y-%m-%dT%H:%MZ"))')"
+  token_store_sas="$(az storage container generate-sas \
+    --account-name "${storage_account_name}" \
+    --account-key "${storage_account_key}" \
+    --name "${auth_token_container_name}" \
+    --permissions dlrwac \
+    --expiry "${sas_expiry}" \
+    --https-only \
+    --output tsv)"
+  entra_token_store_sas_url="https://${storage_account_name}.blob.core.windows.net/${auth_token_container_name}?${token_store_sas}"
+fi
 
 acr_login_server="$(az acr show --name "${acr_name}" --resource-group "${resource_group}" --query loginServer --output tsv)"
 az acr login --name "${acr_name}"
@@ -154,6 +174,11 @@ az deployment group create \
     entraClientId="${entra_client_id}" \
     entraClientSecret="${entra_client_secret}" \
     entraAllowedGroupIds="${entra_allowed_groups_json}" \
+    entraTokenStoreSasUrl="${entra_token_store_sas_url}" \
+    entraSessionCookieExpiration="${entra_session_cookie_expiration}" \
+    entraSessionAbsoluteTimeoutSeconds="${entra_session_absolute_timeout_seconds}" \
+    entraSessionIdleTimeoutSeconds="${entra_session_idle_timeout_seconds}" \
+    entraSessionRefreshIntervalSeconds="${entra_session_refresh_interval_seconds}" \
   --output none
 
 outputs="$(az deployment group show --resource-group "${resource_group}" --name "${apps_deployment_name}" --query properties.outputs --output json)"
