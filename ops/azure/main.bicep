@@ -200,6 +200,7 @@ var mcpInternalUrl = 'http://${mcpAppName}'
 var mlflowTrackerInternalUrl = 'http://${mlflowTrackerAppName}'
 var prometheusInternalUrl = 'http://${prometheusAppName}'
 var sharedMountPath = '/mnt/shared'
+var hasGoogleProgrammableSearchApiKey = !empty(googleProgrammableSearchApiKey)
 
 var dashboardPublicUrl = deployApps ? 'https://${dashboardApp.properties.configuration.ingress.fqdn}' : ''
 var apiPublicUrl = deployApps ? 'https://${apiApp.properties.configuration.ingress.fqdn}' : ''
@@ -415,7 +416,7 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           identity: acrPullIdentity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'database-url'
           value: appDatabaseUrl
@@ -425,10 +426,6 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           value: llmApiKey
         }
         {
-          name: 'google-programmable-search-api-key'
-          value: googleProgrammableSearchApiKey
-        }
-        {
           name: 'mcp-client-auth-token'
           value: mcpClientAuthToken
         }
@@ -436,14 +433,19 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           name: 'smtp-password'
           value: empty(smtpPassword) ? 'smtp-not-configured' : smtpPassword
         }
-      ]
+      ], hasGoogleProgrammableSearchApiKey ? [
+        {
+          name: 'google-programmable-search-api-key'
+          value: googleProgrammableSearchApiKey
+        }
+      ] : [])
     }
     template: {
       containers: [
         {
           name: 'api'
           image: appImage
-          env: [
+          env: concat([
             {
               name: 'ENVIRONMENT'
               value: deploymentEnvironment
@@ -491,10 +493,6 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'SIMILAR_JOB_MIN_SCORE'
               value: similarJobMinScore
-            }
-            {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
-              secretRef: 'google-programmable-search-api-key'
             }
             {
               name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
@@ -600,7 +598,17 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               name: 'COMPANY_SITE_AUTO_OPEN'
               value: 'false'
             }
-          ]
+          ], hasGoogleProgrammableSearchApiKey ? [
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              secretRef: 'google-programmable-search-api-key'
+            }
+          ] : [
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              value: ''
+            }
+          ])
           resources: {
             cpu: 1
             memory: '2Gi'
@@ -657,16 +665,17 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           identity: acrPullIdentity.id
         }
       ]
-      secrets: [
+      secrets: concat([
         {
           name: 'llm-api-key'
           value: llmApiKey
         }
+      ], hasGoogleProgrammableSearchApiKey ? [
         {
           name: 'google-programmable-search-api-key'
           value: googleProgrammableSearchApiKey
         }
-      ]
+      ] : [])
     }
     template: {
       containers: [
@@ -685,7 +694,7 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             '--port'
             '8081'
           ]
-          env: [
+          env: concat([
             {
               name: 'ENVIRONMENT'
               value: deploymentEnvironment
@@ -709,10 +718,6 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'SIMILAR_JOB_MIN_SCORE'
               value: similarJobMinScore
-            }
-            {
-              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
-              secretRef: 'google-programmable-search-api-key'
             }
             {
               name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
@@ -750,7 +755,17 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               name: 'REQUEST_TIMEOUT_SECONDS'
               value: requestTimeoutSeconds
             }
-          ]
+          ], hasGoogleProgrammableSearchApiKey ? [
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              secretRef: 'google-programmable-search-api-key'
+            }
+          ] : [
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              value: ''
+            }
+          ])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
