@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from time import perf_counter
 from typing import Any, TypedDict
@@ -77,7 +78,7 @@ class JobApplicationWorkflow:
         run_id = uuid4().hex[:12]
         with track_run_duration():
             with self.tracker.run_context(self.settings.mlflow_experiment_name, run_name=f"job-app-{run_id}"):
-                self.tracker.log_request(request)
+                await asyncio.to_thread(self.tracker.log_request, request)
                 final_state = await self.graph.ainvoke(
                     {
                         "run_id": run_id,
@@ -88,7 +89,7 @@ class JobApplicationWorkflow:
                     }
                 )
 
-        artifacts = self.exporter.export(run_id, final_state.get("artifacts", []))
+        artifacts = await asyncio.to_thread(self.exporter.export, run_id, final_state.get("artifacts", []))
         for artifact in artifacts:
             job_application_artifacts_total.labels(artifact_type=artifact.artifact_type).inc()
 
@@ -108,7 +109,7 @@ class JobApplicationWorkflow:
             updated_at=datetime.utcnow(),
         )
         self.repository.save_result(result)
-        self.tracker.log_result(result)
+        await asyncio.to_thread(self.tracker.log_result, result)
         job_application_runs_total.labels(status=result.status.value).inc()
         return result
 
@@ -183,7 +184,12 @@ class JobApplicationWorkflow:
 
     async def _matcher_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
-        assessment = self.agents.match(state["request"].profile, state["opportunity"], state["requirements"])
+        assessment = await asyncio.to_thread(
+            self.agents.match,
+            state["request"].profile,
+            state["opportunity"],
+            state["requirements"],
+        )
         status = RunStatus.matching if assessment.ready_for_tailoring else RunStatus.blocked
         return {
             "assessment": assessment,
@@ -198,7 +204,8 @@ class JobApplicationWorkflow:
         artifacts: list[GeneratedArtifact] = []
         status = state.get("status", RunStatus.blocked)
         if state["assessment"].ready_for_tailoring:
-            artifacts = self.agents.generate_artifacts(
+            artifacts = await asyncio.to_thread(
+                self.agents.generate_artifacts,
                 state["request"].profile,
                 state["opportunity"],
                 state["requirements"],
@@ -214,7 +221,12 @@ class JobApplicationWorkflow:
 
     async def _reviewer_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
-        packet = self.agents.review(state["opportunity"], state["assessment"], state.get("artifacts", []))
+        packet = await asyncio.to_thread(
+            self.agents.review,
+            state["opportunity"],
+            state["assessment"],
+            state.get("artifacts", []),
+        )
         status = RunStatus.awaiting_approval if state["assessment"].ready_for_tailoring else RunStatus.blocked
         return {
             "approval_packet": packet,
