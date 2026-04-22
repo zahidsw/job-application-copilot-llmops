@@ -111,7 +111,6 @@ FETCH_HEADERS = {
 }
 
 SEARCH_RESULT_LIMIT = 12
-SIMILAR_JOB_MIN_SCORE = 80
 
 
 def evaluate_source_policy(
@@ -304,7 +303,7 @@ def find_similar_jobs(
     limit: int = 5,
 ) -> list[SimilarJobMatch]:
     query = _build_similar_job_query(opportunity, requirements)
-    results = _search_public_job_results(query)
+    results = _search_public_job_results(query, settings)
     matches: list[SimilarJobMatch] = []
     seen_urls: set[str] = set()
     original_url = opportunity.source_url.strip().lower()
@@ -342,7 +341,7 @@ def find_similar_jobs(
             candidate_requirements=candidate_requirements,
             matched_skills=matched_skills,
         )
-        if similarity_score < SIMILAR_JOB_MIN_SCORE:
+        if similarity_score < settings.similar_job_min_score:
             continue
 
         matches.append(
@@ -596,7 +595,62 @@ def _build_similar_job_query(opportunity: JobOpportunity, requirements: JobRequi
     return " ".join(part.strip() for part in parts if part and part.strip())
 
 
-def _search_public_job_results(query: str) -> list[dict[str, str]]:
+def _search_public_job_results(query: str, settings: Settings | None = None) -> list[dict[str, str]]:
+    provider = (settings.similar_job_search_provider if settings else "duckduckgo_html").strip().lower()
+    if provider == "google_programmable_search" and settings:
+        try:
+            google_results = _search_google_programmable_results(query, settings)
+            if google_results:
+                return google_results
+        except Exception:
+            pass
+
+    return _search_duckduckgo_results(query)
+
+
+def _search_google_programmable_results(query: str, settings: Settings) -> list[dict[str, str]]:
+    api_key = settings.google_programmable_search_api_key.strip()
+    cx = settings.google_programmable_search_cx.strip()
+    if not api_key or not cx:
+        return []
+
+    with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
+        response = client.get(
+            "https://customsearch.googleapis.com/customsearch/v1",
+            params={
+                "key": api_key,
+                "cx": cx,
+                "q": query,
+                "num": min(10, SEARCH_RESULT_LIMIT),
+                "safe": "active",
+                "hl": "en",
+            },
+        )
+        response.raise_for_status()
+
+    payload = response.json()
+    results: list[dict[str, str]] = []
+    for item in payload.get("items", []) or []:
+        result_url = str(item.get("link", "")).strip()
+        if not result_url:
+            continue
+        title = _collapse_whitespace(str(item.get("title", "")))
+        snippet = _collapse_whitespace(str(item.get("snippet", "")))
+        display_link = _collapse_whitespace(str(item.get("displayLink", "")))
+        role, company = _split_title_company(title)
+        results.append(
+            {
+                "role": role,
+                "company": company,
+                "source_name": display_link or urlparse(result_url).netloc.replace("www.", ""),
+                "source_url": result_url,
+                "snippet": snippet,
+            }
+        )
+    return results
+
+
+def _search_duckduckgo_results(query: str) -> list[dict[str, str]]:
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
     with httpx.Client(follow_redirects=True, timeout=20, headers=FETCH_HEADERS) as client:
         response = client.get(url)

@@ -96,6 +96,19 @@ param llmMaxTokens string = '1400'
 @description('HTTP timeout in seconds for outbound LLM calls.')
 param requestTimeoutSeconds string = '60'
 
+@description('Preferred search provider used for similar job discovery.')
+param similarJobSearchProvider string = 'google_programmable_search'
+
+@description('Minimum similarity score required before a related job is shown.')
+param similarJobMinScore string = '80'
+
+@secure()
+@description('API key for Google Programmable Search.')
+param googleProgrammableSearchApiKey string = ''
+
+@description('Search engine identifier (cx) for Google Programmable Search.')
+param googleProgrammableSearchCx string = ''
+
 @secure()
 @description('Shared token the API uses when calling the tool service.')
 param mcpClientAuthToken string = 'change-me-api-token'
@@ -412,6 +425,10 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           value: llmApiKey
         }
         {
+          name: 'google-programmable-search-api-key'
+          value: googleProgrammableSearchApiKey
+        }
+        {
           name: 'mcp-client-auth-token'
           value: mcpClientAuthToken
         }
@@ -466,6 +483,22 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'MANUAL_ONLY_DOMAINS'
               value: 'linkedin.com,indeed.com'
+            }
+            {
+              name: 'SIMILAR_JOB_SEARCH_PROVIDER'
+              value: similarJobSearchProvider
+            }
+            {
+              name: 'SIMILAR_JOB_MIN_SCORE'
+              value: similarJobMinScore
+            }
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              secretRef: 'google-programmable-search-api-key'
+            }
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
+              value: googleProgrammableSearchCx
             }
             {
               name: 'LLM_PROVIDER'
@@ -629,6 +662,10 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           name: 'llm-api-key'
           value: llmApiKey
         }
+        {
+          name: 'google-programmable-search-api-key'
+          value: googleProgrammableSearchApiKey
+        }
       ]
     }
     template: {
@@ -664,6 +701,22 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'MANUAL_ONLY_DOMAINS'
               value: 'linkedin.com,indeed.com'
+            }
+            {
+              name: 'SIMILAR_JOB_SEARCH_PROVIDER'
+              value: similarJobSearchProvider
+            }
+            {
+              name: 'SIMILAR_JOB_MIN_SCORE'
+              value: similarJobMinScore
+            }
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_API_KEY'
+              secretRef: 'google-programmable-search-api-key'
+            }
+            {
+              name: 'GOOGLE_PROGRAMMABLE_SEARCH_CX'
+              value: googleProgrammableSearchCx
             }
             {
               name: 'LLM_PROVIDER'

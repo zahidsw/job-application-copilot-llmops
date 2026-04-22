@@ -72,7 +72,7 @@ def test_find_similar_jobs_returns_high_similarity_matches(monkeypatch):
         ),
     }
 
-    monkeypatch.setattr(tool_gateway, "_search_public_job_results", lambda query: search_results)
+    monkeypatch.setattr(tool_gateway, "_search_public_job_results", lambda query, runtime_settings=None: search_results)
     monkeypatch.setattr(tool_gateway, "fetch_job_from_url", lambda source_url: fetched_payloads[source_url])
 
     matches = tool_gateway.find_similar_jobs(
@@ -88,3 +88,27 @@ def test_find_similar_jobs_returns_high_similarity_matches(monkeypatch):
     assert matches[0].similarity_score >= 80
     assert "Python" in matches[0].matched_skills
     assert "SQL" in matches[0].matched_skills
+
+
+def test_search_public_job_results_prefers_google_programmable_search(monkeypatch):
+    settings = Settings(
+        similar_job_search_provider="google_programmable_search",
+        google_programmable_search_api_key="test-key",
+        google_programmable_search_cx="test-cx",
+    )
+    expected = [
+        {
+            "role": "Platform Engineer",
+            "company": "Example Corp",
+            "source_name": "example.com",
+            "source_url": "https://example.com/jobs/platform",
+            "snippet": "Python platform engineering role",
+        }
+    ]
+
+    monkeypatch.setattr(tool_gateway, "_search_google_programmable_results", lambda query, runtime_settings: expected)
+    monkeypatch.setattr(tool_gateway, "_search_duckduckgo_results", lambda query: [])
+
+    results = tool_gateway._search_public_job_results("platform engineer python", settings)
+
+    assert results == expected

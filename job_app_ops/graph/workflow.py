@@ -118,6 +118,47 @@ class JobApplicationWorkflow:
         job_application_runs_total.labels(status=result.status.value).inc()
         return result
 
+    async def discover_similar_jobs(self, result: ApplicationResult, limit: int | None = None) -> ApplicationResult:
+        start = perf_counter()
+        requested_limit = max(1, limit or result.request.similar_job_limit or 5)
+        matches = await self.tools.find_similar_jobs(
+            opportunity=result.opportunity,
+            requirements=result.requirements,
+            limit=requested_limit,
+        )
+        summary = (
+            f"Found {len(matches)} similar jobs scored at or above {self.settings.similar_job_min_score}% similarity."
+            if matches
+            else f"No similar jobs cleared the {self.settings.similar_job_min_score}% similarity threshold."
+        )
+        stage_summaries = list(result.stage_summaries) + [
+            AgentStageSummary(
+                stage="similar_jobs",
+                summary=summary,
+                duration_seconds=round(perf_counter() - start, 3),
+            )
+        ]
+        metrics = dict(result.metrics)
+        metrics["similar_job_count"] = float(len(matches))
+        request = result.request.model_copy(
+            update={
+                "discover_similar_jobs": True,
+                "similar_job_limit": requested_limit,
+            }
+        )
+        updated = result.model_copy(
+            update={
+                "request": request,
+                "similar_jobs": matches,
+                "stage_summaries": stage_summaries,
+                "metrics": metrics,
+                "updated_at": datetime.utcnow(),
+            }
+        )
+        self.repository.save_result(updated)
+        await asyncio.to_thread(self.tracker.log_result, updated)
+        return updated
+
     async def _source_intake_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         request = state["request"]

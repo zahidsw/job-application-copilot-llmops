@@ -18,6 +18,7 @@ export function RunDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [discoveringSimilarJobs, setDiscoveringSimilarJobs] = useState(false)
   const [rejectReason, setRejectReason] = useState('Rejected by operator.')
 
   useEffect(() => {
@@ -68,6 +69,22 @@ export function RunDetailPage() {
       setError(actionError instanceof Error ? actionError.message : 'Unable to reject this run.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function handleDiscoverSimilarJobs() {
+    if (!run) {
+      return
+    }
+    try {
+      setDiscoveringSimilarJobs(true)
+      setError(null)
+      const nextRun = await api.discoverSimilarJobs(runId, run.request.similar_job_limit ?? 5)
+      setRun(nextRun)
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to discover similar jobs.')
+    } finally {
+      setDiscoveringSimilarJobs(false)
     }
   }
 
@@ -221,8 +238,15 @@ export function RunDetailPage() {
         </section>
 
         <section className="panel">
-          <p className="eyebrow">Similar jobs</p>
-          <h3>Internet jobs that look at least 80% similar</h3>
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Similar jobs</p>
+              <h3>Internet jobs that look at least 80% similar</h3>
+            </div>
+            <button className="primary-button" type="button" disabled={discoveringSimilarJobs} onClick={handleDiscoverSimilarJobs}>
+              {discoveringSimilarJobs ? 'Finding…' : run.similar_jobs.length ? 'Refresh similar jobs' : 'Find similar jobs'}
+            </button>
+          </div>
           {run.similar_jobs.length ? (
             <div className="artifact-list">
               {run.similar_jobs.map((job) => (
@@ -250,11 +274,7 @@ export function RunDetailPage() {
               ))}
             </div>
           ) : (
-            <p className="empty-state">
-              {run.request.discover_similar_jobs
-                ? 'No similar jobs passed the 80% threshold for this run.'
-                : 'This run was not configured to discover similar jobs.'}
-            </p>
+            <p className="empty-state">No similar jobs have been loaded yet. Click the button above to search for them.</p>
           )}
         </section>
       </section>

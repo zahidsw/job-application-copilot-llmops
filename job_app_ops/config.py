@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     match_threshold: int = 70
     allowed_source_domains: str = "greenhouse.io,lever.co,workday.com,smartrecruiters.com,linkedin.com,indeed.com"
     manual_only_domains: str = "linkedin.com,indeed.com"
+    similar_job_search_provider: str = "google_programmable_search"
+    similar_job_min_score: int = 80
+    google_programmable_search_api_key: str = ""
+    google_programmable_search_cx: str = ""
 
     default_tenant_id: str = "local-dev"
     require_tenant_header: bool = False

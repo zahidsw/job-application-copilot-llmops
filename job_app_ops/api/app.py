@@ -116,6 +116,16 @@ def create_api_application(runtime: Runtime | None = None) -> FastAPI:
         runtime.tracker.log_result(updated)
         return updated
 
+    @app.post("/api/v1/applications/{run_id}/similar-jobs", response_model=ApplicationResult)
+    async def discover_similar_jobs(run_id: str, limit: int = 5) -> ApplicationResult:
+        result = runtime.repository.get_result(run_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} was not found.")
+        try:
+            return await runtime.workflow.discover_similar_jobs(result, limit=limit)
+        except Exception as exc:  # pragma: no cover
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     @app.post("/api/v1/applications/{run_id}/reject", response_model=ApplicationResult)
     async def reject_application(run_id: str, request: RejectRunRequest) -> ApplicationResult:
         result = runtime.repository.get_result(run_id)

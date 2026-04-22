@@ -116,6 +116,7 @@ After approval, a separate submission action can:
 - `POST /api/v1/applications/run`
 - `POST /api/v1/applications/run-from-url`
 - `GET /api/v1/applications/{run_id}`
+- `POST /api/v1/applications/{run_id}/similar-jobs`
 - `POST /api/v1/applications/{run_id}/approve`
 - `POST /api/v1/applications/{run_id}/reject`
 - `GET /api/v1/runs`
@@ -136,6 +137,7 @@ The operator dashboard lives in `dashboard-ui/` and gives you:
 - URL-first and manual submission forms
 - profile vault editing and asset uploads
 - run review, approval, and rejection
+- on-demand similar-job discovery from an existing run
 - direct links to Grafana, MLflow, Prometheus, the API, and the tool service
 
 ### Lightweight local mode

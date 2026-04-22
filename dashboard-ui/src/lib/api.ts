@@ -72,6 +72,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ send_email_now: sendEmailNow }),
     }),
+  discoverSimilarJobs: (runId: string, limit = 5) =>
+    readJson<ApplicationResult>(`/api/v1/applications/${runId}/similar-jobs?limit=${limit}`, {
+      method: 'POST',
+    }),
   rejectRun: (runId: string, reason: string) =>
     readJson<ApplicationResult>(`/api/v1/applications/${runId}/reject`, {
       method: 'POST',
