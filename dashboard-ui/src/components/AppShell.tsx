@@ -1,5 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { triggerLogout } from '../lib/auth'
 import { serviceLinks } from '../lib/format'
+import { appRuntimeConfig } from '../lib/runtimeConfig'
 
 const navigation = [
   { to: '/', label: 'Overview', hint: 'live stack and recent runs' },
@@ -8,6 +10,8 @@ const navigation = [
 ]
 
 export function AppShell() {
+  const isProtectedByEntra = appRuntimeConfig.entraAuthEnabled
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -57,6 +61,14 @@ export function AppShell() {
             <p className="eyebrow">Recruiting operations</p>
             <h2 className="workspace-title">Local-first dashboard for runs, vault assets, and approval flow.</h2>
           </div>
+          {isProtectedByEntra ? (
+            <div className="workspace-actions">
+              <button type="button" className="ghost-button session-action-button" onClick={() => triggerLogout()}>
+                Sign out
+              </button>
+              <p className="session-hint">Ends the current session so the next sign-in lets you choose an email again.</p>
+            </div>
+          ) : null}
         </header>
         <main className="workspace-body">
           <Outlet />

@@ -121,6 +121,10 @@ img {
 
 .workspace-header {
   margin-bottom: 1.25rem;
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
 }
 
 .workspace-title {
@@ -128,6 +132,25 @@ img {
   font-size: clamp(1.8rem, 3vw, 2.8rem);
   line-height: 1.08;
   letter-spacing: -0.04em;
+}
+
+.workspace-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: end;
+  gap: 0.55rem;
+  max-width: 18rem;
+}
+
+.session-action-button {
+  min-width: 120px;
+}
+
+.session-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: right;
 }
 
 .workspace-body {
@@ -723,6 +746,18 @@ img {
 @media (max-width: 960px) {
   .app-shell {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-header {
+    flex-direction: column;
+  }
+
+  .workspace-actions {
+    align-items: start;
+  }
+
+  .session-hint {
+    text-align: left;
   }
 
   .sidebar {

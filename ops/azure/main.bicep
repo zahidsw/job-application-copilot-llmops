@@ -174,6 +174,9 @@ var entraIssuer = empty(entraTenantId) ? '' : 'https://login.microsoftonline.com
 var entraClientSecretName = 'entra-auth-client-secret'
 var entraTokenStoreSasSecretName = 'entra-token-store-sas-url'
 var entraTokenStoreContainerName = 'entratokens'
+var entraLoginParameters = [
+  'prompt=select_account'
+]
 
 var postgresHost = '${postgresServerName}.postgres.database.azure.com'
 var appDatabaseUrl = 'postgresql+psycopg://${postgresAdminUser}:${uriComponent(postgresAdminPassword)}@${postgresHost}:5432/${appDatabaseName}?sslmode=require'
@@ -1170,6 +1173,9 @@ resource dashboardAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
+        login: {
+          loginParameters: entraLoginParameters
+        }
         registration: {
           clientId: entraClientId
           clientSecretSettingName: entraClientSecretName
@@ -1220,6 +1226,9 @@ resource grafanaAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
+        login: {
+          loginParameters: entraLoginParameters
+        }
         registration: {
           clientId: entraClientId
           clientSecretSettingName: entraClientSecretName
@@ -1270,6 +1279,9 @@ resource mlflowAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = if (d
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
+        login: {
+          loginParameters: entraLoginParameters
+        }
         registration: {
           clientId: entraClientId
           clientSecretSettingName: entraClientSecretName
@@ -1320,6 +1332,9 @@ resource prometheusAuth 'Microsoft.App/containerApps/authConfigs@2024-03-01' = i
     identityProviders: {
       azureActiveDirectory: {
         enabled: true
+        login: {
+          loginParameters: entraLoginParameters
+        }
         registration: {
           clientId: entraClientId
           clientSecretSettingName: entraClientSecretName

@@ -1,29 +1,15 @@
 import { useEffect, useEffectEvent, useRef } from 'react'
+import {
+  buildLogoutUrl,
+  FORCED_LOGOUT_AT_KEY,
+  LAST_ACTIVITY_AT_KEY,
+  SESSION_STARTED_AT_KEY,
+  readTimestamp,
+  triggerLogout,
+} from '../lib/auth'
 import { appRuntimeConfig } from '../lib/runtimeConfig'
 
-const STORAGE_KEY_PREFIX = 'job-application-copilot.session'
-const SESSION_STARTED_AT_KEY = `${STORAGE_KEY_PREFIX}.startedAt`
-const LAST_ACTIVITY_AT_KEY = `${STORAGE_KEY_PREFIX}.lastActivityAt`
-const FORCED_LOGOUT_AT_KEY = `${STORAGE_KEY_PREFIX}.forcedLogoutAt`
 const SESSION_CHECK_INTERVAL_MS = 15_000
-
-function readTimestamp(key: string) {
-  try {
-    const storedValue = window.localStorage.getItem(key)
-    if (!storedValue) {
-      return undefined
-    }
-
-    const parsedValue = Number(storedValue)
-    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-      return undefined
-    }
-
-    return parsedValue
-  } catch {
-    return undefined
-  }
-}
 
 function writeTimestamp(key: string, value: number) {
   try {
@@ -31,23 +17,6 @@ function writeTimestamp(key: string, value: number) {
   } catch {
     // Ignore storage write failures and fall back to in-memory behavior.
   }
-}
-
-function clearSessionTracking() {
-  try {
-    window.localStorage.removeItem(SESSION_STARTED_AT_KEY)
-    window.localStorage.removeItem(LAST_ACTIVITY_AT_KEY)
-  } catch {
-    // Ignore storage cleanup failures during logout.
-  }
-}
-
-function currentLocationUrl() {
-  return `${window.location.origin}${window.location.pathname}${window.location.search}${window.location.hash}`
-}
-
-function logoutUrl() {
-  return `/.auth/logout?post_logout_redirect_uri=${encodeURIComponent(currentLocationUrl())}`
 }
 
 export function SessionGuard() {
@@ -62,10 +31,7 @@ export function SessionGuard() {
     refreshIntervalMs > 0
 
   const forceReauthentication = useEffectEvent(() => {
-    const forcedLogoutAt = Date.now()
-    clearSessionTracking()
-    writeTimestamp(FORCED_LOGOUT_AT_KEY, forcedLogoutAt)
-    window.location.assign(logoutUrl())
+    triggerLogout()
   })
 
   const ensureSessionWindow = useEffectEvent(() => {
@@ -154,7 +120,7 @@ export function SessionGuard() {
     const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'mousemove', 'scroll', 'focus']
     const onStorage = (event: StorageEvent) => {
       if (event.key === FORCED_LOGOUT_AT_KEY && event.newValue) {
-        window.location.assign(logoutUrl())
+        window.location.assign(buildLogoutUrl(triggeredLogoutLocation()))
       }
     }
 
@@ -200,4 +166,8 @@ export function SessionGuard() {
   ])
 
   return null
+}
+
+function triggeredLogoutLocation() {
+  return window.location.href
 }
