@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import re
+from time import perf_counter
 import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -113,6 +115,13 @@ FETCH_HEADERS = {
 }
 
 SEARCH_RESULT_LIMIT = 12
+SERPAPI_TIMEOUT_SECONDS = 10
+JOB_FETCH_TIMEOUT = httpx.Timeout(8.0, connect=4.0)
+SIMILAR_JOB_FETCH_ATTEMPT_LIMIT = 4
+MIN_SEARCH_TEXT_LENGTH = 120
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @dataclass(frozen=True)
@@ -201,6 +210,7 @@ def evaluate_source_policy(
 
 
 def fetch_job_from_url(source_url: str) -> JobFetchResult:
+    start = perf_counter()
     parsed = urlparse(source_url)
     source_name = parsed.netloc.replace("www.", "")
     job_id = _extract_linkedin_job_id(source_url)
@@ -214,8 +224,9 @@ def fetch_job_from_url(source_url: str) -> JobFetchResult:
 
     last_note = f"Unable to fetch job details from {source_url}."
     final_url = source_url
-    with httpx.Client(follow_redirects=True, timeout=20, headers=FETCH_HEADERS) as client:
+    with httpx.Client(follow_redirects=True, timeout=JOB_FETCH_TIMEOUT, headers=FETCH_HEADERS) as client:
         for candidate in candidates:
+            candidate_start = perf_counter()
             try:
                 response = client.get(candidate)
                 final_url = str(response.url)
@@ -234,6 +245,13 @@ def fetch_job_from_url(source_url: str) -> JobFetchResult:
                 note = "Fetched job details from the public job page."
                 if candidate != source_url:
                     note = f"Fetched job details using fallback URL {candidate}."
+                logger.info(
+                    "fetch_job_from_url success host=%s candidate=%s elapsed=%.3fs total_elapsed=%.3fs",
+                    source_name or "job-source",
+                    candidate,
+                    perf_counter() - candidate_start,
+                    perf_counter() - start,
+                )
                 return JobFetchResult(
                     source_url=source_url,
                     final_url=final_url,
@@ -247,7 +265,20 @@ def fetch_job_from_url(source_url: str) -> JobFetchResult:
                 )
             except Exception as exc:
                 last_note = f"Fetching {candidate} failed: {exc}"
+                logger.info(
+                    "fetch_job_from_url candidate failed host=%s candidate=%s elapsed=%.3fs error=%s",
+                    source_name or "job-source",
+                    candidate,
+                    perf_counter() - candidate_start,
+                    exc,
+                )
 
+    logger.info(
+        "fetch_job_from_url failed host=%s elapsed=%.3fs note=%s",
+        source_name or "job-source",
+        perf_counter() - start,
+        last_note,
+    )
     return JobFetchResult(
         source_url=source_url,
         final_url=final_url,
@@ -358,12 +389,14 @@ def find_similar_jobs(
     requirements: JobRequirements,
     limit: int = 5,
 ) -> list[SimilarJobMatch]:
+    start = perf_counter()
     query = _build_similar_job_query(opportunity, requirements)
     results = _search_public_job_results(query, settings, opportunity)
     matches: list[SimilarJobMatch] = []
     seen_urls: set[str] = set()
     original_url = opportunity.source_url.strip().lower()
     source_location = _location_context_from_opportunity(opportunity)
+    fetch_attempts = 0
 
     for result in results[:SEARCH_RESULT_LIMIT]:
         result_url = result["source_url"].strip()
@@ -383,7 +416,10 @@ def find_similar_jobs(
         if not source_policy["source_approved"]:
             continue
 
-        fetched = fetch_job_from_url(result_url)
+        fetched = _job_fetch_result_from_search_result(result)
+        if _should_fetch_similar_job_candidate(result, fetched) and fetch_attempts < SIMILAR_JOB_FETCH_ATTEMPT_LIMIT:
+            fetch_attempts += 1
+            fetched = fetch_job_from_url(result_url)
         candidate_text = " ".join(
             part
             for part in [
@@ -440,7 +476,49 @@ def find_similar_jobs(
             break
 
     matches.sort(key=lambda item: item.similarity_score, reverse=True)
+    logger.info(
+        "find_similar_jobs completed query=%r result_count=%d matches=%d fetch_attempts=%d elapsed=%.3fs",
+        query,
+        len(results),
+        len(matches),
+        fetch_attempts,
+        perf_counter() - start,
+    )
     return matches[: max(limit, 1)]
+
+
+def _job_fetch_result_from_search_result(result: dict[str, str]) -> JobFetchResult:
+    result_url = result.get("source_url", "")
+    source_name = result.get("source_name") or urlparse(result_url).netloc.replace("www.", "")
+    search_text = " ".join(
+        part
+        for part in [
+            result.get("role", ""),
+            result.get("company", ""),
+            result.get("location_hint", ""),
+            result.get("snippet", ""),
+        ]
+        if part
+    )
+    return JobFetchResult(
+        source_url=result_url,
+        final_url=result_url,
+        source_name=source_name or "job-source",
+        company=result.get("company", ""),
+        role=result.get("role", ""),
+        job_text=search_text,
+        raw_html="",
+        fetch_note="Used structured search provider metadata without opening the job page.",
+        requires_auth=False,
+    )
+
+
+def _should_fetch_similar_job_candidate(result: dict[str, str], fetched: JobFetchResult) -> bool:
+    if result.get("skip_fetch", "").lower() in {"1", "true", "yes"}:
+        return False
+    if len(fetched.job_text or "") >= MIN_SEARCH_TEXT_LENGTH and len(_extract_skills_anywhere(fetched.job_text.lower())) >= 2:
+        return False
+    return True
 
 
 def _extract_skills_from_line(text: str, marker: str) -> list[str]:
@@ -787,7 +865,7 @@ def _search_serpapi_google_jobs(
     if location_context.hint:
         params["location"] = location_context.hint
 
-    with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
+    with httpx.Client(timeout=SERPAPI_TIMEOUT_SECONDS, headers=FETCH_HEADERS) as client:
         response = client.get("https://serpapi.com/search.json", params=params)
         response.raise_for_status()
 
@@ -826,6 +904,7 @@ def _search_serpapi_google_jobs(
                 "source_name": source_name,
                 "source_url": result_url,
                 "location_hint": location_hint,
+                "skip_fetch": "true",
                 "snippet": snippet,
             }
         )
@@ -849,7 +928,7 @@ def _search_serpapi_google_web(
     if location_context.hint:
         params["location"] = location_context.hint
 
-    with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
+    with httpx.Client(timeout=SERPAPI_TIMEOUT_SECONDS, headers=FETCH_HEADERS) as client:
         response = client.get("https://serpapi.com/search.json", params=params)
         response.raise_for_status()
 
@@ -948,7 +1027,7 @@ def _flatten_job_highlights(highlights: object) -> str:
 
 def _search_duckduckgo_results(query: str) -> list[dict[str, str]]:
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-    with httpx.Client(follow_redirects=True, timeout=20, headers=FETCH_HEADERS) as client:
+    with httpx.Client(follow_redirects=True, timeout=JOB_FETCH_TIMEOUT, headers=FETCH_HEADERS) as client:
         response = client.get(url)
         response.raise_for_status()
 

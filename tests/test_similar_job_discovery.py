@@ -233,3 +233,56 @@ def test_find_similar_jobs_filters_wrong_country(monkeypatch):
 
     assert [match.company for match in matches] == ["Swiss Example"]
     assert matches[0].location_hint == "Zurich, Switzerland"
+
+
+def test_find_similar_jobs_uses_structured_search_text_without_refetch(monkeypatch):
+    settings = Settings(
+        allowed_source_domains="swiss.example",
+        manual_only_domains="linkedin.com,indeed.com",
+        similar_job_min_score=70,
+    )
+    opportunity = JobOpportunity(
+        company="Swiss Example AG",
+        role=".NET Software Engineer",
+        source_name="example.ch",
+        source_url="https://example.ch/jobs/dotnet",
+        source_type=JobSourceType.company_site,
+        destination="https://example.ch/jobs/dotnet",
+        submission_channel=SubmissionChannel.company_site,
+        normalized_description=".NET Software Engineer Zurich Switzerland Azure C# SQL CI/CD",
+        location_mode="hybrid",
+        source_identifier="example.ch",
+        source_approved=True,
+        source_policy_note="Source approved.",
+    )
+    requirements = JobRequirements(required_skills=[".NET", "Azure", "C#", "SQL"])
+    search_results = [
+        {
+            "role": ".NET Software Engineer",
+            "company": "Swiss Example",
+            "source_name": "swiss.example",
+            "source_url": "https://swiss.example/jobs/dotnet",
+            "location_hint": "Zurich, Switzerland",
+            "skip_fetch": "true",
+            "snippet": ".NET Software Engineer Azure C# SQL CI/CD hybrid role in Zurich Switzerland "
+            "building cloud services, APIs, and production engineering workflows.",
+        },
+    ]
+
+    monkeypatch.setattr(tool_gateway, "_search_public_job_results", lambda query, runtime_settings=None, opportunity=None: search_results)
+    monkeypatch.setattr(
+        tool_gateway,
+        "fetch_job_from_url",
+        lambda source_url: (_ for _ in ()).throw(AssertionError("search metadata should avoid page refetch")),
+    )
+
+    matches = tool_gateway.find_similar_jobs(
+        settings=settings,
+        opportunity=opportunity,
+        requirements=requirements,
+        limit=5,
+    )
+
+    assert len(matches) == 1
+    assert matches[0].company == "Swiss Example"
+    assert matches[0].location_hint == "Zurich, Switzerland"
