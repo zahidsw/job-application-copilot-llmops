@@ -135,6 +135,9 @@ class JobOpportunity(BaseModel):
     submission_channel: SubmissionChannel
     normalized_description: str
     location_mode: str = "unknown"
+    location_hint: str = ""
+    location_country: str = ""
+    location_country_code: str = ""
     compensation_hint: str = ""
     work_authorization_requirement: str = ""
     source_identifier: str = ""
@@ -169,6 +172,7 @@ class SimilarJobMatch(BaseModel):
     source_url: str
     similarity_score: int
     location_mode: str = "unknown"
+    location_hint: str = ""
     matched_skills: list[str] = Field(default_factory=list)
     snippet: str = ""
     source_approved: bool = True

@@ -115,6 +115,9 @@ export interface JobOpportunity {
   submission_channel: SubmissionChannel
   normalized_description: string
   location_mode: string
+  location_hint: string
+  location_country: string
+  location_country_code: string
   compensation_hint: string
   work_authorization_requirement: string
   source_identifier: string
@@ -149,6 +152,7 @@ export interface SimilarJobMatch {
   source_url: string
   similarity_score: number
   location_mode: string
+  location_hint: string
   matched_skills: string[]
   snippet: string
   source_approved: boolean

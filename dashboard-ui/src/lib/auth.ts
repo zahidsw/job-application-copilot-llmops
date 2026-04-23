@@ -39,6 +39,14 @@ export function clearSessionTracking() {
   }
 }
 
+export function markSessionActivity() {
+  const now = Date.now()
+  if (!readTimestamp(SESSION_STARTED_AT_KEY)) {
+    writeTimestamp(SESSION_STARTED_AT_KEY, now)
+  }
+  writeTimestamp(LAST_ACTIVITY_AT_KEY, now)
+}
+
 function currentLocationUrl() {
   return `${window.location.origin}${window.location.pathname}${window.location.search}${window.location.hash}`
 }

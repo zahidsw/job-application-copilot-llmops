@@ -100,7 +100,7 @@ export function SessionGuard() {
       })
 
       if (response.status === 401 || response.status === 403) {
-        forceReauthentication()
+        evaluateSession()
       }
     } catch {
       // Ignore transient refresh failures and retry on the next interval.

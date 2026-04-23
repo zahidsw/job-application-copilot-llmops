@@ -257,6 +257,11 @@ export function RunDetailPage() {
                     <p className="subtle-copy">
                       {job.company || 'Unknown company'} · {formatScore(job.similarity_score)}
                     </p>
+                    {job.location_hint || job.location_mode !== 'unknown' ? (
+                      <p className="subtle-copy">
+                        Location: {job.location_hint || job.location_mode}
+                      </p>
+                    ) : null}
                     {job.matched_skills.length ? (
                       <p className="subtle-copy">Shared skills: {job.matched_skills.join(', ')}</p>
                     ) : null}
@@ -348,7 +353,7 @@ function buildSimilarJobLaunchUrl(job: ApplicationResult['similar_jobs'][number]
     company: job.company || '',
     role: job.role,
     source_name: job.source_name,
-    discover_similar_jobs: 'true',
+    discover_similar_jobs: 'false',
     similar_job_limit: '5',
   })
   return `/submit?${params.toString()}`

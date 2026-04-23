@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from html import unescape
 from urllib.parse import parse_qs, quote_plus, urlparse
@@ -113,6 +115,57 @@ FETCH_HEADERS = {
 SEARCH_RESULT_LIMIT = 12
 
 
+@dataclass(frozen=True)
+class LocationContext:
+    hint: str = ""
+    country: str = ""
+    country_code: str = ""
+    city: str = ""
+
+
+COUNTRY_HINTS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("Switzerland", "ch", ("switzerland", "schweiz", "suisse", "svizzera")),
+    ("Germany", "de", ("germany", "deutschland")),
+    ("Austria", "at", ("austria", "osterreich", "oesterreich")),
+    ("France", "fr", ("france", "frankreich")),
+    ("United Kingdom", "uk", ("united kingdom", "uk", "great britain")),
+    ("United States", "us", ("united states", "usa", "u.s.", "u.s.a.")),
+    ("Canada", "ca", ("canada",)),
+]
+
+CITY_HINTS: dict[str, tuple[str, str, str]] = {
+    "aarau": ("Aarau", "Switzerland", "ch"),
+    "allschwil": ("Allschwil", "Switzerland", "ch"),
+    "baden": ("Baden", "Switzerland", "ch"),
+    "basel": ("Basel", "Switzerland", "ch"),
+    "bern": ("Bern", "Switzerland", "ch"),
+    "biel": ("Biel", "Switzerland", "ch"),
+    "geneva": ("Geneva", "Switzerland", "ch"),
+    "genf": ("Geneva", "Switzerland", "ch"),
+    "lausanne": ("Lausanne", "Switzerland", "ch"),
+    "lucerne": ("Lucerne", "Switzerland", "ch"),
+    "lugano": ("Lugano", "Switzerland", "ch"),
+    "luzern": ("Lucerne", "Switzerland", "ch"),
+    "neuchatel": ("Neuchatel", "Switzerland", "ch"),
+    "st. gallen": ("St. Gallen", "Switzerland", "ch"),
+    "st gallen": ("St. Gallen", "Switzerland", "ch"),
+    "winterthur": ("Winterthur", "Switzerland", "ch"),
+    "zug": ("Zug", "Switzerland", "ch"),
+    "zurich": ("Zurich", "Switzerland", "ch"),
+    "zuerich": ("Zurich", "Switzerland", "ch"),
+    "berlin": ("Berlin", "Germany", "de"),
+    "hamburg": ("Hamburg", "Germany", "de"),
+    "munich": ("Munich", "Germany", "de"),
+    "muenchen": ("Munich", "Germany", "de"),
+    "vienna": ("Vienna", "Austria", "at"),
+    "wien": ("Vienna", "Austria", "at"),
+    "london": ("London", "United Kingdom", "uk"),
+    "los angeles": ("Los Angeles", "United States", "us"),
+    "san francisco": ("San Francisco", "United States", "us"),
+    "new york": ("New York", "United States", "us"),
+}
+
+
 def evaluate_source_policy(
     *,
     settings: Settings,
@@ -220,6 +273,7 @@ def normalize_job_post(
 ) -> JobOpportunity:
     description = BeautifulSoup(job_text, "html.parser").get_text(" ", strip=True)
     location_mode = _infer_location_mode(description)
+    location_context = _infer_location_context(description, source_url, destination, source_name, company, role)
     compensation_hint = _extract_compensation(description)
     work_auth = _infer_work_authorization(description)
 
@@ -233,6 +287,9 @@ def normalize_job_post(
         submission_channel=submission_channel,
         normalized_description=description,
         location_mode=location_mode,
+        location_hint=location_context.hint,
+        location_country=location_context.country,
+        location_country_code=location_context.country_code,
         compensation_hint=compensation_hint,
         work_authorization_requirement=work_auth,
         source_identifier=source_identifier,
@@ -302,10 +359,11 @@ def find_similar_jobs(
     limit: int = 5,
 ) -> list[SimilarJobMatch]:
     query = _build_similar_job_query(opportunity, requirements)
-    results = _search_public_job_results(query, settings)
+    results = _search_public_job_results(query, settings, opportunity)
     matches: list[SimilarJobMatch] = []
     seen_urls: set[str] = set()
     original_url = opportunity.source_url.strip().lower()
+    source_location = _location_context_from_opportunity(opportunity)
 
     for result in results[:SEARCH_RESULT_LIMIT]:
         result_url = result["source_url"].strip()
@@ -326,8 +384,26 @@ def find_similar_jobs(
             continue
 
         fetched = fetch_job_from_url(result_url)
-        candidate_text = fetched.job_text or result["snippet"]
+        candidate_text = " ".join(
+            part
+            for part in [
+                fetched.job_text,
+                result.get("snippet", ""),
+                result.get("location_hint", ""),
+                fetched.role or result.get("role", ""),
+                fetched.company or result.get("company", ""),
+            ]
+            if part
+        ).strip()
         if not candidate_text:
+            continue
+
+        candidate_location = _infer_location_context(candidate_text, result.get("location_hint", ""), result_url)
+        if (
+            source_location.country
+            and candidate_location.country
+            and candidate_location.country != source_location.country
+        ):
             continue
 
         candidate_requirements = extract_job_requirements(candidate_text)
@@ -351,6 +427,7 @@ def find_similar_jobs(
                 source_url=fetched.final_url or result_url,
                 similarity_score=similarity_score,
                 location_mode=_infer_location_mode(candidate_text),
+                location_hint=candidate_location.hint or result.get("location_hint", ""),
                 matched_skills=matched_skills[:6],
                 snippet=_excerpt_text(candidate_text, 260),
                 source_approved=True,
@@ -478,6 +555,64 @@ def _infer_location_mode(text: str) -> str:
     return "unknown"
 
 
+def _infer_location_context(*parts: str) -> LocationContext:
+    text = _normalize_location_text(" ".join(part for part in parts if part))
+    if not text:
+        return LocationContext()
+
+    for city_key, (city, country, country_code) in sorted(CITY_HINTS.items(), key=lambda item: len(item[0]), reverse=True):
+        if _contains_phrase(text, city_key):
+            return LocationContext(hint=f"{city}, {country}", country=country, country_code=country_code, city=city)
+
+    for country, country_code, aliases in COUNTRY_HINTS:
+        if any(_contains_phrase(text, alias) for alias in aliases):
+            return LocationContext(hint=country, country=country, country_code=country_code)
+
+    if ".ch/" in text or text.endswith(".ch") or ".swiss/" in text:
+        return LocationContext(hint="Switzerland", country="Switzerland", country_code="ch")
+    if ".de/" in text or text.endswith(".de"):
+        return LocationContext(hint="Germany", country="Germany", country_code="de")
+    if ".at/" in text or text.endswith(".at"):
+        return LocationContext(hint="Austria", country="Austria", country_code="at")
+
+    if _contains_phrase(text, "europe") or _contains_phrase(text, "eu remote"):
+        return LocationContext(hint="Europe")
+
+    return LocationContext()
+
+
+def _location_context_from_opportunity(opportunity: JobOpportunity | None) -> LocationContext:
+    if not opportunity:
+        return LocationContext()
+    if opportunity.location_hint or opportunity.location_country or opportunity.location_country_code:
+        return LocationContext(
+            hint=opportunity.location_hint or opportunity.location_country,
+            country=opportunity.location_country,
+            country_code=opportunity.location_country_code,
+        )
+    return _infer_location_context(
+        opportunity.normalized_description,
+        opportunity.source_url,
+        opportunity.destination,
+        opportunity.source_name,
+        opportunity.company,
+        opportunity.role,
+    )
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    if not phrase:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(_normalize_location_text(phrase))}(?![a-z0-9])"
+    return re.search(pattern, text) is not None
+
+
+def _normalize_location_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text or "")
+    ascii_text = "".join(character for character in normalized if not unicodedata.combining(character))
+    return ascii_text.lower()
+
+
 def _extract_compensation(text: str) -> str:
     match = re.search(r"(CHF|EUR|USD)\s?\d{2,3}[kK]", text)
     return match.group(0) if match else ""
@@ -588,17 +723,24 @@ def _build_similar_job_query(opportunity: JobOpportunity, requirements: JobRequi
         parts.append(" ".join(requirements.required_skills[:4]))
     elif requirements.preferred_skills:
         parts.append(" ".join(requirements.preferred_skills[:3]))
+    location_context = _location_context_from_opportunity(opportunity)
+    if location_context.hint:
+        parts.append(f"in {location_context.hint}")
     if opportunity.location_mode in {"remote", "hybrid"}:
         parts.append(opportunity.location_mode)
     parts.append("jobs")
     return " ".join(part.strip() for part in parts if part and part.strip())
 
 
-def _search_public_job_results(query: str, settings: Settings | None = None) -> list[dict[str, str]]:
+def _search_public_job_results(
+    query: str,
+    settings: Settings | None = None,
+    opportunity: JobOpportunity | None = None,
+) -> list[dict[str, str]]:
     provider = (settings.similar_job_search_provider if settings else "duckduckgo_html").strip().lower()
     if provider == "serpapi" and settings:
         try:
-            serpapi_results = _search_serpapi_results(query, settings)
+            serpapi_results = _search_serpapi_results(query, settings, opportunity)
             if serpapi_results:
                 return serpapi_results
         except Exception:
@@ -607,22 +749,108 @@ def _search_public_job_results(query: str, settings: Settings | None = None) -> 
     return _search_duckduckgo_results(query)
 
 
-def _search_serpapi_results(query: str, settings: Settings) -> list[dict[str, str]]:
+def _search_serpapi_results(
+    query: str,
+    settings: Settings,
+    opportunity: JobOpportunity | None = None,
+) -> list[dict[str, str]]:
     api_key = settings.serpapi_api_key.strip()
     if not api_key:
         return []
 
+    location_context = _location_context_from_opportunity(opportunity) if opportunity else LocationContext()
+    google_jobs_results = _search_serpapi_google_jobs(query, settings, location_context)
+    if google_jobs_results:
+        return google_jobs_results
+
+    return _search_serpapi_google_web(query, settings, location_context)
+
+
+def _search_serpapi_google_jobs(
+    query: str,
+    settings: Settings,
+    location_context: LocationContext,
+) -> list[dict[str, str]]:
+    api_key = settings.serpapi_api_key.strip()
+    if not api_key:
+        return []
+
+    params: dict[str, str] = {
+        "api_key": api_key,
+        "engine": "google_jobs",
+        "q": query,
+        "hl": "en",
+        "google_domain": "google.com",
+    }
+    if location_context.country_code:
+        params["gl"] = location_context.country_code
+    if location_context.hint:
+        params["location"] = location_context.hint
+
     with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
-        response = client.get(
-            "https://serpapi.com/search.json",
-            params={
-                "api_key": api_key,
-                "engine": "google",
-                "q": query,
-                "num": min(10, SEARCH_RESULT_LIMIT),
-                "hl": "en",
-            },
+        response = client.get("https://serpapi.com/search.json", params=params)
+        response.raise_for_status()
+
+    payload = response.json()
+    results: list[dict[str, str]] = []
+    jobs_payload = payload.get("jobs_results", []) or []
+    if isinstance(jobs_payload, dict):
+        jobs_payload = jobs_payload.get("jobs", []) or []
+
+    for item in jobs_payload:
+        if not isinstance(item, dict):
+            continue
+        result_url = _extract_serpapi_job_url(item)
+        if not result_url:
+            continue
+        title = _collapse_whitespace(str(item.get("title", "")))
+        company = _collapse_whitespace(str(item.get("company_name", "")))
+        location_hint = _collapse_whitespace(str(item.get("location", "")))
+        snippet = _collapse_whitespace(
+            " ".join(
+                part
+                for part in [
+                    str(item.get("description", "")),
+                    location_hint,
+                    " ".join(str(value) for value in item.get("extensions", []) or []),
+                    _flatten_job_highlights(item.get("job_highlights", [])),
+                ]
+                if part
+            )
         )
+        source_name = _collapse_whitespace(str(item.get("via", ""))).replace("via ", "") or urlparse(result_url).netloc.replace("www.", "")
+        results.append(
+            {
+                "role": title or "Similar role",
+                "company": company,
+                "source_name": source_name,
+                "source_url": result_url,
+                "location_hint": location_hint,
+                "snippet": snippet,
+            }
+        )
+    return results
+
+
+def _search_serpapi_google_web(
+    query: str,
+    settings: Settings,
+    location_context: LocationContext,
+) -> list[dict[str, str]]:
+    params: dict[str, str] = {
+        "api_key": settings.serpapi_api_key.strip(),
+        "engine": "google",
+        "q": query,
+        "num": str(min(10, SEARCH_RESULT_LIMIT)),
+        "hl": "en",
+    }
+    if location_context.country_code:
+        params["gl"] = location_context.country_code
+    if location_context.hint:
+        params["location"] = location_context.hint
+
+    with httpx.Client(timeout=20, headers=FETCH_HEADERS) as client:
+        response = client.get("https://serpapi.com/search.json", params=params)
         response.raise_for_status()
 
     payload = response.json()
@@ -641,6 +869,7 @@ def _search_serpapi_results(query: str, settings: Settings) -> list[dict[str, st
                 "company": company,
                 "source_name": display_link or urlparse(result_url).netloc.replace("www.", ""),
                 "source_url": result_url,
+                "location_hint": location_context.hint,
                 "snippet": snippet,
             }
         )
@@ -648,8 +877,16 @@ def _search_serpapi_results(query: str, settings: Settings) -> list[dict[str, st
     if results:
         return results
 
-    for item in payload.get("jobs_results", []) or []:
+    jobs_payload = payload.get("jobs_results", []) or []
+    if isinstance(jobs_payload, dict):
+        jobs_payload = jobs_payload.get("jobs", []) or []
+
+    for item in jobs_payload:
+        if not isinstance(item, dict):
+            continue
         related_links = item.get("related_links") or item.get("apply_options") or []
+        if not isinstance(related_links, list):
+            related_links = []
         result_url = ""
         for link_item in related_links:
             result_url = str(link_item.get("link", "")).strip()
@@ -667,10 +904,46 @@ def _search_serpapi_results(query: str, settings: Settings) -> list[dict[str, st
                 "company": company,
                 "source_name": urlparse(result_url).netloc.replace("www.", ""),
                 "source_url": result_url,
+                "location_hint": location_context.hint,
                 "snippet": snippet,
             }
         )
     return results
+
+
+def _extract_serpapi_job_url(item: dict[str, object]) -> str:
+    for group_name in ("apply_options", "related_links"):
+        group = item.get(group_name) or []
+        if not isinstance(group, list):
+            continue
+        for link_item in group:
+            if not isinstance(link_item, dict):
+                continue
+            result_url = str(link_item.get("link", "")).strip()
+            if result_url:
+                return result_url
+
+    for field_name in ("link", "share_link", "serpapi_link"):
+        result_url = str(item.get(field_name, "")).strip()
+        if result_url:
+            return result_url
+    return ""
+
+
+def _flatten_job_highlights(highlights: object) -> str:
+    if not isinstance(highlights, list):
+        return ""
+    parts: list[str] = []
+    for highlight in highlights:
+        if not isinstance(highlight, dict):
+            continue
+        title = str(highlight.get("title", "")).strip()
+        if title:
+            parts.append(title)
+        items = highlight.get("items") or []
+        if isinstance(items, list):
+            parts.extend(str(item).strip() for item in items if str(item).strip())
+    return " ".join(parts)
 
 
 def _search_duckduckgo_results(query: str) -> list[dict[str, str]]:
@@ -747,19 +1020,37 @@ def _compute_job_similarity(
     source_languages = {language.lower() for language in source_requirements.language_requirements}
     candidate_languages = {language.lower() for language in candidate_requirements.language_requirements}
     language_similarity = 1.0 if not source_languages else len(source_languages & candidate_languages) / max(len(source_languages), 1)
-    location_similarity = 1.0 if source_opportunity.location_mode == _infer_location_mode(candidate_description) else 0.4
+    location_similarity = _compute_location_similarity(source_opportunity, candidate_description)
     keyword_similarity = _keyword_overlap(source_opportunity.normalized_description, candidate_description)
 
     score = (
-        role_similarity * 35
-        + skill_similarity * 40
+        role_similarity * 30
+        + skill_similarity * 35
         + language_similarity * 10
-        + location_similarity * 5
+        + location_similarity * 15
         + keyword_similarity * 10
     )
     if matched_skills:
         score += min(10, len(matched_skills) * 2)
     return max(0, min(100, round(score)))
+
+
+def _compute_location_similarity(source_opportunity: JobOpportunity, candidate_description: str) -> float:
+    source_location = _location_context_from_opportunity(source_opportunity)
+    candidate_location = _infer_location_context(candidate_description)
+    if source_location.country and candidate_location.country:
+        return 1.0 if source_location.country == candidate_location.country else 0.0
+    if source_location.hint and source_location.hint.lower() in candidate_description.lower():
+        return 1.0
+    if source_location.country:
+        return 0.55
+
+    candidate_mode = _infer_location_mode(candidate_description)
+    if source_opportunity.location_mode != "unknown" and source_opportunity.location_mode == candidate_mode:
+        return 1.0
+    if source_opportunity.location_mode == "remote" and candidate_mode == "hybrid":
+        return 0.7
+    return 0.45
 
 
 def _shared_skills(source_requirements: JobRequirements, candidate_requirements: JobRequirements) -> list[str]:

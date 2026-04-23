@@ -10,12 +10,14 @@ import type {
   ProfileVault,
   RunSummary,
 } from '../types'
+import { markSessionActivity } from './auth'
 import { appRuntimeConfig } from './runtimeConfig'
 
 const API_BASE = appRuntimeConfig.apiBaseUrl
 const TOOL_BASE = appRuntimeConfig.toolBaseUrl
 
 async function readJson<T>(path: string, init?: RequestInit): Promise<T> {
+  markSessionActivity()
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
@@ -33,6 +35,7 @@ async function readJson<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message)
   }
 
+  markSessionActivity()
   return (await response.json()) as T
 }
 
@@ -82,6 +85,7 @@ export const api = {
       body: JSON.stringify({ reason }),
     }),
   previewJobUrl: async (sourceUrl: string) => {
+    markSessionActivity()
     const response = await fetch(`${TOOL_BASE}/fetch-job`, {
       method: 'POST',
       headers: {
@@ -99,6 +103,7 @@ export const api = {
       )
     }
 
+    markSessionActivity()
     return (await response.json()) as JobFetchResult
   },
 }
