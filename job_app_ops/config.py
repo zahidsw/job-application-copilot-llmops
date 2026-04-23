@@ -56,6 +56,13 @@ class Settings(BaseSettings):
     mlflow_experiment_name: str = "job-application-copilot"
     mlflow_eval_experiment_name: str = "job-application-copilot-evals"
 
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = ""
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_hide_inputs: bool = True
+    langsmith_hide_outputs: bool = True
+
     eval_dataset_path: Path = Path("ops/evals/golden_dataset.json")
 
     smtp_host: str = ""

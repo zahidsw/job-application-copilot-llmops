@@ -4,7 +4,8 @@ import httpx
 
 from job_app_ops.config import Settings
 from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SimilarJobMatch, SubmissionChannel
-from job_app_ops.services.metrics import remote_tool_requests_total
+from job_app_ops.services.langsmith_observability import summarize_remote_tool_inputs, summarize_remote_tool_outputs, traceable
+from job_app_ops.services.metrics import remote_tool_requests_total, track_remote_tool_duration
 
 
 class MCPRemoteToolClient:
@@ -80,10 +81,18 @@ class MCPRemoteToolClient:
         )
         return [SimilarJobMatch.model_validate(item) for item in data]
 
+    @traceable(
+        name="remote_tool_call",
+        run_type="tool",
+        tags=["job-application", "remote-tool"],
+        process_inputs=summarize_remote_tool_inputs,
+        process_outputs=summarize_remote_tool_outputs,
+    )
     async def _post_json(self, path: str, payload: dict[str, object], *, tool: str) -> dict[str, object]:
         try:
-            response = await self._client.post(path, json=payload)
-            response.raise_for_status()
+            with track_remote_tool_duration(tool):
+                response = await self._client.post(path, json=payload)
+                response.raise_for_status()
             remote_tool_requests_total.labels(tool=tool, status="ok").inc()
             return response.json()
         except Exception:

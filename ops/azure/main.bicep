@@ -110,6 +110,25 @@ param serpApiKey string = ''
 @description('Shared token the API uses when calling the tool service.')
 param mcpClientAuthToken string = 'change-me-api-token'
 
+@description('Enable LangSmith tracing for LangGraph and LLM spans.')
+param langsmithTracing string = 'false'
+
+@secure()
+@description('LangSmith API key used when tracing is enabled.')
+param langsmithApiKey string = ''
+
+@description('LangSmith project name for traces. Defaults to an environment-specific project when empty.')
+param langsmithProject string = ''
+
+@description('LangSmith API endpoint.')
+param langsmithEndpoint string = 'https://api.smith.langchain.com'
+
+@description('Hide trace inputs before sending to LangSmith. Recommended for CV/application data.')
+param langsmithHideInputs string = 'true'
+
+@description('Hide trace outputs before sending to LangSmith. Recommended for CV/application data.')
+param langsmithHideOutputs string = 'true'
+
 @description('Minimum number of replicas for the API app.')
 param apiMinReplicas int = 1
 
@@ -198,6 +217,8 @@ var mlflowTrackerInternalUrl = 'http://${mlflowTrackerAppName}'
 var prometheusInternalUrl = 'http://${prometheusAppName}'
 var sharedMountPath = '/mnt/shared'
 var hasSerpApiKey = !empty(serpApiKey)
+var hasLangsmithApiKey = !empty(langsmithApiKey)
+var langsmithProjectName = empty(langsmithProject) ? 'job-application-copilot-${deploymentEnvironment}' : langsmithProject
 
 var dashboardPublicUrl = deployApps ? 'https://${dashboardApp.properties.configuration.ingress.fqdn}' : ''
 var apiPublicUrl = deployApps ? 'https://${apiApp.properties.configuration.ingress.fqdn}' : ''
@@ -435,6 +456,11 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           name: 'serpapi-api-key'
           value: serpApiKey
         }
+      ] : [], hasLangsmithApiKey ? [
+        {
+          name: 'langsmith-api-key'
+          value: langsmithApiKey
+        }
       ] : [])
     }
     template: {
@@ -568,6 +594,26 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               value: 'job-application-copilot-evals'
             }
             {
+              name: 'LANGSMITH_TRACING'
+              value: langsmithTracing
+            }
+            {
+              name: 'LANGSMITH_PROJECT'
+              value: langsmithProjectName
+            }
+            {
+              name: 'LANGSMITH_ENDPOINT'
+              value: langsmithEndpoint
+            }
+            {
+              name: 'LANGSMITH_HIDE_INPUTS'
+              value: langsmithHideInputs
+            }
+            {
+              name: 'LANGSMITH_HIDE_OUTPUTS'
+              value: langsmithHideOutputs
+            }
+            {
               name: 'SMTP_HOST'
               value: smtpHost
             }
@@ -599,6 +645,16 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           ] : [
             {
               name: 'SERPAPI_API_KEY'
+              value: ''
+            }
+          ], hasLangsmithApiKey ? [
+            {
+              name: 'LANGSMITH_API_KEY'
+              secretRef: 'langsmith-api-key'
+            }
+          ] : [
+            {
+              name: 'LANGSMITH_API_KEY'
               value: ''
             }
           ])
@@ -667,6 +723,11 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         {
           name: 'serpapi-api-key'
           value: serpApiKey
+        }
+      ] : [], hasLangsmithApiKey ? [
+        {
+          name: 'langsmith-api-key'
+          value: langsmithApiKey
         }
       ] : [])
     }
@@ -744,6 +805,26 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               name: 'REQUEST_TIMEOUT_SECONDS'
               value: requestTimeoutSeconds
             }
+            {
+              name: 'LANGSMITH_TRACING'
+              value: langsmithTracing
+            }
+            {
+              name: 'LANGSMITH_PROJECT'
+              value: langsmithProjectName
+            }
+            {
+              name: 'LANGSMITH_ENDPOINT'
+              value: langsmithEndpoint
+            }
+            {
+              name: 'LANGSMITH_HIDE_INPUTS'
+              value: langsmithHideInputs
+            }
+            {
+              name: 'LANGSMITH_HIDE_OUTPUTS'
+              value: langsmithHideOutputs
+            }
           ], hasSerpApiKey ? [
             {
               name: 'SERPAPI_API_KEY'
@@ -752,6 +833,16 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
           ] : [
             {
               name: 'SERPAPI_API_KEY'
+              value: ''
+            }
+          ], hasLangsmithApiKey ? [
+            {
+              name: 'LANGSMITH_API_KEY'
+              secretRef: 'langsmith-api-key'
+            }
+          ] : [
+            {
+              name: 'LANGSMITH_API_KEY'
               value: ''
             }
           ])

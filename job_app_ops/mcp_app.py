@@ -6,6 +6,7 @@ import uvicorn
 
 from job_app_ops.config import get_settings
 from job_app_ops.schemas import JobFetchResult, JobOpportunity, JobRequirements, JobSourceType, SimilarJobMatch, SubmissionChannel
+from job_app_ops.services.langsmith_observability import configure_langsmith
 from job_app_ops.services.metrics import render_metrics
 from job_app_ops.services.tool_gateway import (
     evaluate_source_policy,
@@ -17,6 +18,7 @@ from job_app_ops.services.tool_gateway import (
 
 
 settings = get_settings()
+configure_langsmith(settings, service_name="job-app-mcp")
 app = FastAPI(title="Job Application Tool Service", version="0.1.0")
 
 

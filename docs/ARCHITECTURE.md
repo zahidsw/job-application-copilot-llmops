@@ -32,6 +32,7 @@ Use the same production-ready operating model as the research LLMOps system, but
 | MLflow experiment tracking | Application run and evaluation tracking |
 | Prometheus metrics | Run, artifact, tool-call, and submission metrics |
 | Grafana dashboard | Job application operations dashboard |
+| LangSmith tracing | LangGraph node and LLM-call debugging |
 
 ## Production modules used here
 
@@ -123,6 +124,8 @@ Artifacts are persisted under the configured `ARTIFACTS_DIR`.
 - submission/handoff count
 - end-to-end run duration
 - remote tool request count
+- graph node duration and error count
+- remote tool duration by tool name
 
 `ops/prometheus/prometheus.yml` scrapes the API, tool service, and evaluator.
 
@@ -136,7 +139,19 @@ Grafana provisioning is defined under:
 
 This provides the same operational dashboard pattern as the reference project, but focused on recruiting throughput, blocked runs, approvals, and submission volume.
 
-### 10. Evaluations
+### 10. LangSmith
+
+`job_app_ops/services/langsmith_observability.py` configures optional LangSmith tracing for:
+
+- `job_application_graph_run`
+- each LangGraph node (`source_intake`, `requirements`, `matcher`, `tailorer`, `reviewer`, `similar_jobs`)
+- on-demand similar-job refreshes
+- remote tool calls
+- custom OpenAI-compatible LLM calls
+
+Trace inputs and outputs are hidden by default with `LANGSMITH_HIDE_INPUTS=true` and `LANGSMITH_HIDE_OUTPUTS=true`, while safe metadata such as node name, duration, status, scores, source type, company, role, and counts remains available for debugging.
+
+### 11. Evaluations
 
 `job_app_ops/evals/runner.py` and `ops/evals/golden_dataset.json` define the evaluation hook for:
 
@@ -147,7 +162,7 @@ This provides the same operational dashboard pattern as the reference project, b
 
 This is the recruiting equivalent of the reference project's evaluation loop.
 
-### 11. Docker Compose local stack
+### 12. Docker Compose local stack
 
 `docker-compose.yml` provisions:
 
@@ -164,7 +179,7 @@ This is the recruiting equivalent of the reference project's evaluation loop.
 
 This is the local production mirror for development and demos.
 
-### 12. Cloud deployment placeholders
+### 13. Cloud deployment placeholders
 
 `ops/azure/main.bicep`, `ops/azure/README.md`, and `ops/azure/stack.env.example` are the infrastructure placeholders for promoting this to a cloud environment later.
 

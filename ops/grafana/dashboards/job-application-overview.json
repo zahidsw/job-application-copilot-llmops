@@ -2,7 +2,7 @@
   "title": "Job Application Copilot Overview",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "panels": [
     {
       "type": "timeseries",
@@ -50,6 +50,50 @@
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 8 },
       "targets": [
         { "expr": "sum(job_application_submissions_total)" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LangGraph Node Duration",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum by (node) (rate(job_application_graph_node_duration_seconds_sum[5m])) / sum by (node) (rate(job_application_graph_node_duration_seconds_count[5m]))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LangGraph Node Errors",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "sum by (node) (increase(job_application_graph_node_runs_total{status=\"error\"}[15m]))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Remote Tool Duration",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "sum by (tool) (rate(job_application_remote_tool_duration_seconds_sum[5m])) / sum by (tool) (rate(job_application_remote_tool_duration_seconds_count[5m]))",
+          "legendFormat": "{{tool}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Remote Tool Errors",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "sum by (tool) (increase(job_application_remote_tool_requests_total{status=\"error\"}[15m]))",
+          "legendFormat": "{{tool}}"
+        }
       ]
     }
   ]

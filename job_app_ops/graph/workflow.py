@@ -25,7 +25,22 @@ from job_app_ops.schemas import (
 )
 from job_app_ops.services.exporter import ArtifactExporter
 from job_app_ops.services.mcp_remote_client import MCPRemoteToolClient
-from job_app_ops.services.metrics import job_application_artifacts_total, job_application_runs_total, track_run_duration
+from job_app_ops.services.langsmith_observability import (
+    set_langsmith_metadata,
+    summarize_graph_run_inputs,
+    summarize_graph_run_outputs,
+    summarize_similar_refresh_inputs,
+    summarize_workflow_node_inputs,
+    summarize_workflow_node_outputs,
+    traceable,
+)
+from job_app_ops.services.metrics import (
+    instrument_graph_node,
+    job_application_artifacts_total,
+    job_application_runs_total,
+    track_graph_node_duration,
+    track_run_duration,
+)
 from job_app_ops.services.mlflow_tracker import MLflowTracker
 
 
@@ -78,8 +93,24 @@ class JobApplicationWorkflow:
         graph.add_edge("similar_jobs", END)
         return graph.compile()
 
+    @traceable(
+        name="job_application_graph_run",
+        run_type="chain",
+        tags=["job-application", "langgraph"],
+        process_inputs=summarize_graph_run_inputs,
+        process_outputs=summarize_graph_run_outputs,
+    )
     async def run(self, request: JobApplicationRequest) -> ApplicationResult:
         run_id = uuid4().hex[:12]
+        set_langsmith_metadata(
+            run_id=run_id,
+            environment=self.settings.environment,
+            company=request.company,
+            role=request.role,
+            source_type=request.source_type.value,
+            submission_channel=request.submission_channel.value,
+            profile_id=request.profile.profile_id,
+        )
         with track_run_duration():
             with self.tracker.run_context(self.settings.mlflow_experiment_name, run_name=f"job-app-{run_id}"):
                 await asyncio.to_thread(self.tracker.log_request, request)
@@ -90,7 +121,19 @@ class JobApplicationWorkflow:
                         "status": RunStatus.queued,
                         "stage_summaries": [],
                         "metrics": {},
-                    }
+                    },
+                    config={
+                        "tags": ["job-application", self.settings.environment],
+                        "metadata": {
+                            "run_id": run_id,
+                            "environment": self.settings.environment,
+                            "company": request.company,
+                            "role": request.role,
+                            "source_type": request.source_type.value,
+                            "submission_channel": request.submission_channel.value,
+                            "profile_id": request.profile.profile_id,
+                        },
+                    },
                 )
 
         artifacts = await asyncio.to_thread(self.exporter.export, run_id, final_state.get("artifacts", []))
@@ -118,14 +161,29 @@ class JobApplicationWorkflow:
         job_application_runs_total.labels(status=result.status.value).inc()
         return result
 
+    @traceable(
+        name="node.similar_jobs_refresh",
+        run_type="tool",
+        tags=["job-application", "similar-jobs"],
+        process_inputs=summarize_similar_refresh_inputs,
+        process_outputs=summarize_graph_run_outputs,
+    )
     async def discover_similar_jobs(self, result: ApplicationResult, limit: int | None = None) -> ApplicationResult:
         start = perf_counter()
-        requested_limit = max(1, limit or result.request.similar_job_limit or 5)
-        matches = await self.tools.find_similar_jobs(
-            opportunity=result.opportunity,
-            requirements=result.requirements,
-            limit=requested_limit,
-        )
+        with track_graph_node_duration("similar_jobs_refresh"):
+            requested_limit = max(1, limit or result.request.similar_job_limit or 5)
+            set_langsmith_metadata(
+                run_id=result.run_id,
+                company=result.opportunity.company,
+                role=result.opportunity.role,
+                requested_limit=requested_limit,
+                source_domain=result.opportunity.source_name,
+            )
+            matches = await self.tools.find_similar_jobs(
+                opportunity=result.opportunity,
+                requirements=result.requirements,
+                limit=requested_limit,
+            )
         summary = (
             f"Found {len(matches)} similar jobs scored at or above {self.settings.similar_job_min_score}% similarity."
             if matches
@@ -225,9 +283,24 @@ class JobApplicationWorkflow:
         self.repository.save_result(updated)
         return updated
 
+    @traceable(
+        name="node.source_intake",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("source_intake")
     async def _source_intake_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         request = state["request"]
+        set_langsmith_metadata(
+            run_id=state.get("run_id"),
+            node="source_intake",
+            source_type=request.source_type.value,
+            submission_channel=request.submission_channel.value,
+            source_name=request.source_name,
+        )
         company = request.company
         role = request.role
         source_name = request.source_name
@@ -285,8 +358,17 @@ class JobApplicationWorkflow:
             + [AgentStageSummary(stage="source_intake", summary=f"Normalized {opportunity.role} at {opportunity.company}. {fetch_note}".strip(), duration_seconds=round(perf_counter() - start, 3))],
         }
 
+    @traceable(
+        name="node.requirements",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("requirements")
     async def _requirements_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
+        set_langsmith_metadata(run_id=state.get("run_id"), node="requirements")
         requirements = await self.tools.extract_requirements(state["opportunity"].normalized_description)
         return {
             "requirements": requirements,
@@ -294,6 +376,14 @@ class JobApplicationWorkflow:
             + [AgentStageSummary(stage="requirements", summary="Extracted structured requirements from the job description.", duration_seconds=round(perf_counter() - start, 3))],
         }
 
+    @traceable(
+        name="node.matcher",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("matcher")
     async def _matcher_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         assessment = await asyncio.to_thread(
@@ -301,6 +391,13 @@ class JobApplicationWorkflow:
             state["request"].profile,
             state["opportunity"],
             state["requirements"],
+        )
+        set_langsmith_metadata(
+            run_id=state.get("run_id"),
+            node="matcher",
+            overall_score=assessment.overall_score,
+            decision=assessment.decision,
+            ready_for_tailoring=assessment.ready_for_tailoring,
         )
         status = RunStatus.matching if assessment.ready_for_tailoring else RunStatus.blocked
         return {
@@ -311,6 +408,14 @@ class JobApplicationWorkflow:
             + [AgentStageSummary(stage="matcher", summary=f"Computed fit score {assessment.overall_score}% with decision {assessment.decision}.", duration_seconds=round(perf_counter() - start, 3))],
         }
 
+    @traceable(
+        name="node.tailorer",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("tailorer")
     async def _tailorer_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         artifacts: list[GeneratedArtifact] = []
@@ -324,6 +429,12 @@ class JobApplicationWorkflow:
                 state["assessment"],
             )
             status = RunStatus.tailoring
+        set_langsmith_metadata(
+            run_id=state.get("run_id"),
+            node="tailorer",
+            artifact_count=len(artifacts),
+            status=status.value,
+        )
         return {
             "artifacts": artifacts,
             "status": status,
@@ -331,6 +442,14 @@ class JobApplicationWorkflow:
             + [AgentStageSummary(stage="tailorer", summary="Generated tailored artifacts." if artifacts else "Skipped artifact generation because the role did not clear the gate.", duration_seconds=round(perf_counter() - start, 3))],
         }
 
+    @traceable(
+        name="node.reviewer",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("reviewer")
     async def _reviewer_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         packet = await asyncio.to_thread(
@@ -340,6 +459,12 @@ class JobApplicationWorkflow:
             state.get("artifacts", []),
         )
         status = RunStatus.awaiting_approval if state["assessment"].ready_for_tailoring else RunStatus.blocked
+        set_langsmith_metadata(
+            run_id=state.get("run_id"),
+            node="reviewer",
+            status=status.value,
+            risk_count=len(packet.risks),
+        )
         return {
             "approval_packet": packet,
             "status": status,
@@ -347,9 +472,23 @@ class JobApplicationWorkflow:
             + [AgentStageSummary(stage="reviewer", summary=packet.summary, duration_seconds=round(perf_counter() - start, 3))],
         }
 
+    @traceable(
+        name="node.similar_jobs",
+        run_type="chain",
+        tags=["job-application", "langgraph-node"],
+        process_inputs=summarize_workflow_node_inputs,
+        process_outputs=summarize_workflow_node_outputs,
+    )
+    @instrument_graph_node("similar_jobs")
     async def _similar_jobs_node(self, state: ApplicationState) -> ApplicationState:
         start = perf_counter()
         request = state["request"]
+        set_langsmith_metadata(
+            run_id=state.get("run_id"),
+            node="similar_jobs",
+            enabled=request.discover_similar_jobs,
+            limit=request.similar_job_limit,
+        )
         if not request.discover_similar_jobs:
             return {
                 "similar_jobs": [],

@@ -47,6 +47,11 @@ The script maps these values into the Azure deployment:
 - `LLM_TEMPERATURE`
 - `LLM_MAX_TOKENS`
 - `REQUEST_TIMEOUT_SECONDS`
+- optional `LANGSMITH_TRACING`
+- optional `LANGSMITH_PROJECT`
+- optional `LANGSMITH_ENDPOINT`
+- optional `LANGSMITH_HIDE_INPUTS`
+- optional `LANGSMITH_HIDE_OUTPUTS`
 
 The API key is never written into the repo by the deployment script. It is passed to Azure as a secret.
 
@@ -177,6 +182,11 @@ Create these repository variables. The Azure naming variables are optional becau
 - `LLM_TEMPERATURE`
 - `LLM_MAX_TOKENS`
 - `REQUEST_TIMEOUT_SECONDS`
+- `LANGSMITH_TRACING`
+- `LANGSMITH_PROJECT`
+- `LANGSMITH_ENDPOINT`
+- `LANGSMITH_HIDE_INPUTS`
+- `LANGSMITH_HIDE_OUTPUTS`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USER`
@@ -196,6 +206,7 @@ Create these repository secrets:
 - `LLM_BASE_URL`
 - `LLM_API_KEY`
 - `LLM_MODEL`
+- `LANGSMITH_API_KEY`
 - `MCP_CLIENT_AUTH_TOKEN`
 - `GRAFANA_ADMIN_PASSWORD`
 - `SMTP_PASSWORD`

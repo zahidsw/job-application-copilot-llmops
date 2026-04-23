@@ -15,6 +15,12 @@ param(
     [string]$SmtpUser = "",
     [string]$SmtpPassword = "",
     [string]$SmtpFrom = "",
+    [string]$LangsmithTracing = "false",
+    [string]$LangsmithApiKey = "",
+    [string]$LangsmithProject = "",
+    [string]$LangsmithEndpoint = "https://api.smith.langchain.com",
+    [string]$LangsmithHideInputs = "true",
+    [string]$LangsmithHideOutputs = "true",
     [string]$ImageTag = "manual"
 )
 
@@ -142,6 +148,12 @@ $llmJsonMode = if ($sharedEnv.ContainsKey("LLM_JSON_MODE")) { $sharedEnv["LLM_JS
 $llmTemperature = if ($sharedEnv.ContainsKey("LLM_TEMPERATURE")) { $sharedEnv["LLM_TEMPERATURE"] } else { "0.2" }
 $llmMaxTokens = if ($sharedEnv.ContainsKey("LLM_MAX_TOKENS")) { $sharedEnv["LLM_MAX_TOKENS"] } else { "1400" }
 $requestTimeoutSeconds = if ($sharedEnv.ContainsKey("REQUEST_TIMEOUT_SECONDS")) { $sharedEnv["REQUEST_TIMEOUT_SECONDS"] } else { "60" }
+$langsmithTracing = if ($sharedEnv.ContainsKey("LANGSMITH_TRACING")) { $sharedEnv["LANGSMITH_TRACING"] } else { $LangsmithTracing }
+$langsmithApiKey = if ($sharedEnv.ContainsKey("LANGSMITH_API_KEY")) { $sharedEnv["LANGSMITH_API_KEY"] } else { $LangsmithApiKey }
+$langsmithProject = if ($sharedEnv.ContainsKey("LANGSMITH_PROJECT")) { $sharedEnv["LANGSMITH_PROJECT"] } elseif ($LangsmithProject) { $LangsmithProject } else { "job-application-copilot-$environmentLabel" }
+$langsmithEndpoint = if ($sharedEnv.ContainsKey("LANGSMITH_ENDPOINT")) { $sharedEnv["LANGSMITH_ENDPOINT"] } else { $LangsmithEndpoint }
+$langsmithHideInputs = if ($sharedEnv.ContainsKey("LANGSMITH_HIDE_INPUTS")) { $sharedEnv["LANGSMITH_HIDE_INPUTS"] } else { $LangsmithHideInputs }
+$langsmithHideOutputs = if ($sharedEnv.ContainsKey("LANGSMITH_HIDE_OUTPUTS")) { $sharedEnv["LANGSMITH_HIDE_OUTPUTS"] } else { $LangsmithHideOutputs }
 
 if (-not $llmApiKey) {
     throw "LLM_API_KEY was not found in '$SharedEnvPath'."
@@ -223,6 +235,12 @@ Invoke-AzDeployment -DeploymentName $appsDeploymentName -TemplateFile $templateF
     llmTemperature = $llmTemperature
     llmMaxTokens = $llmMaxTokens
     requestTimeoutSeconds = $requestTimeoutSeconds
+    langsmithTracing = $langsmithTracing
+    langsmithApiKey = $langsmithApiKey
+    langsmithProject = $langsmithProject
+    langsmithEndpoint = $langsmithEndpoint
+    langsmithHideInputs = $langsmithHideInputs
+    langsmithHideOutputs = $langsmithHideOutputs
     mcpClientAuthToken = $McpClientAuthToken
     grafanaAdminPassword = $GrafanaAdminPassword
     smtpHost = $SmtpHost

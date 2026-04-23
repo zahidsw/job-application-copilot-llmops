@@ -36,7 +36,8 @@ See `docs/ARCHITECTURE.md` for the direct mapping from the research reference pr
 - URL-first intake so the system can fetch job content from a link when possible
 - explicit human approval gates before dispatch
 - MLflow tracking for runs and evaluations
-- Prometheus and Grafana for local observability
+- Prometheus and Grafana for operational observability
+- optional LangSmith tracing for LangGraph node and LLM debugging
 - Docker Compose for local deployment
 - Azure Container Apps deployment assets and CI/CD workflow
 
@@ -65,6 +66,7 @@ flowchart LR
     Q --> J
     Q --> P
     R["Grafana"] --> Q
+    C --> S["LangSmith Traces"]
 ```
 
 ## Core workflow
@@ -116,6 +118,16 @@ Similar-job discovery configuration:
 - `SIMILAR_JOB_SEARCH_PROVIDER=serpapi`
 - `SERPAPI_API_KEY=...`
 - `SIMILAR_JOB_MIN_SCORE=80`
+
+Optional LangSmith tracing:
+
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_API_KEY=...`
+- `LANGSMITH_PROJECT=job-application-copilot-local`
+- `LANGSMITH_HIDE_INPUTS=true`
+- `LANGSMITH_HIDE_OUTPUTS=true`
+
+Inputs and outputs are hidden by default because runs may contain CVs, motivation letters, email addresses, and application material. The traces still include node names, duration, status, scores, counts, source type, and role/company metadata.
 
 ## API surface
 

@@ -9,6 +9,7 @@ from job_app_ops.config import Settings, get_settings
 from job_app_ops.database import RunRepository, init_db
 from job_app_ops.graph.workflow import JobApplicationWorkflow
 from job_app_ops.services.exporter import ArtifactExporter
+from job_app_ops.services.langsmith_observability import configure_langsmith
 from job_app_ops.services.mcp_remote_client import MCPRemoteToolClient
 from job_app_ops.services.mlflow_tracker import MLflowTracker
 from job_app_ops.services.profile_vault import ProfileVaultService
@@ -40,6 +41,7 @@ class Runtime:
 @lru_cache(maxsize=1)
 def get_runtime() -> Runtime:
     settings = get_settings()
+    configure_langsmith(settings, service_name="job-app-api")
     init_db(settings)
     tools = MCPRemoteToolClient(settings)
     profile_vault = ProfileVaultService(settings)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 
 from job_app_ops.config import Settings
+from job_app_ops.services.langsmith_observability import summarize_llm_inputs, summarize_llm_outputs, traceable
 
 
 class LLMClient:
@@ -21,6 +22,13 @@ class LLMClient:
         base_url = (self.settings.llm_base_url or "").strip()
         return bool(base_url and key and key.lower() not in {"local", "change-me", "change-me-api-token"})
 
+    @traceable(
+        name="llm.generate_markdown",
+        run_type="llm",
+        tags=["job-application", "llm"],
+        process_inputs=summarize_llm_inputs,
+        process_outputs=summarize_llm_outputs,
+    )
     def generate_markdown(self, *, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
         if not self.is_configured:
             return ""
