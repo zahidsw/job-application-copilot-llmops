@@ -19,6 +19,7 @@ param(
     [string]$LangsmithApiKey = "",
     [string]$LangsmithProject = "",
     [string]$LangsmithEndpoint = "https://api.smith.langchain.com",
+    [string]$LangsmithWorkspaceId = "",
     [string]$LangsmithHideInputs = "true",
     [string]$LangsmithHideOutputs = "true",
     [string]$ImageTag = "manual"
@@ -152,6 +153,7 @@ $langsmithTracing = if ($sharedEnv.ContainsKey("LANGSMITH_TRACING")) { $sharedEn
 $langsmithApiKey = if ($sharedEnv.ContainsKey("LANGSMITH_API_KEY")) { $sharedEnv["LANGSMITH_API_KEY"] } else { $LangsmithApiKey }
 $langsmithProject = if ($sharedEnv.ContainsKey("LANGSMITH_PROJECT")) { $sharedEnv["LANGSMITH_PROJECT"] } elseif ($LangsmithProject) { $LangsmithProject } else { "job-application-copilot-$environmentLabel" }
 $langsmithEndpoint = if ($sharedEnv.ContainsKey("LANGSMITH_ENDPOINT")) { $sharedEnv["LANGSMITH_ENDPOINT"] } else { $LangsmithEndpoint }
+$langsmithWorkspaceId = if ($sharedEnv.ContainsKey("LANGSMITH_WORKSPACE_ID")) { $sharedEnv["LANGSMITH_WORKSPACE_ID"] } else { $LangsmithWorkspaceId }
 $langsmithHideInputs = if ($sharedEnv.ContainsKey("LANGSMITH_HIDE_INPUTS")) { $sharedEnv["LANGSMITH_HIDE_INPUTS"] } else { $LangsmithHideInputs }
 $langsmithHideOutputs = if ($sharedEnv.ContainsKey("LANGSMITH_HIDE_OUTPUTS")) { $sharedEnv["LANGSMITH_HIDE_OUTPUTS"] } else { $LangsmithHideOutputs }
 
@@ -239,6 +241,7 @@ Invoke-AzDeployment -DeploymentName $appsDeploymentName -TemplateFile $templateF
     langsmithApiKey = $langsmithApiKey
     langsmithProject = $langsmithProject
     langsmithEndpoint = $langsmithEndpoint
+    langsmithWorkspaceId = $langsmithWorkspaceId
     langsmithHideInputs = $langsmithHideInputs
     langsmithHideOutputs = $langsmithHideOutputs
     mcpClientAuthToken = $McpClientAuthToken

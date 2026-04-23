@@ -123,6 +123,9 @@ param langsmithProject string = ''
 @description('LangSmith API endpoint.')
 param langsmithEndpoint string = 'https://api.smith.langchain.com'
 
+@description('Optional LangSmith workspace ID, required for some workspace-scoped keys.')
+param langsmithWorkspaceId string = ''
+
 @description('Hide trace inputs before sending to LangSmith. Recommended for CV/application data.')
 param langsmithHideInputs string = 'true'
 
@@ -606,6 +609,10 @@ resource apiApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
               value: langsmithEndpoint
             }
             {
+              name: 'LANGSMITH_WORKSPACE_ID'
+              value: langsmithWorkspaceId
+            }
+            {
               name: 'LANGSMITH_HIDE_INPUTS'
               value: langsmithHideInputs
             }
@@ -816,6 +823,10 @@ resource mcpApp 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             {
               name: 'LANGSMITH_ENDPOINT'
               value: langsmithEndpoint
+            }
+            {
+              name: 'LANGSMITH_WORKSPACE_ID'
+              value: langsmithWorkspaceId
             }
             {
               name: 'LANGSMITH_HIDE_INPUTS'

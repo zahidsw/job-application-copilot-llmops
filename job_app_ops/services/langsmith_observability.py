@@ -48,6 +48,8 @@ def configure_langsmith(settings: Settings, *, service_name: str) -> None:
     os.environ["LANGSMITH_PROJECT"] = project
     os.environ["LANGCHAIN_PROJECT"] = project
     os.environ["LANGSMITH_ENDPOINT"] = settings.langsmith_endpoint
+    if settings.langsmith_workspace_id.strip():
+        os.environ["LANGSMITH_WORKSPACE_ID"] = settings.langsmith_workspace_id.strip()
     os.environ["LANGSMITH_HIDE_INPUTS"] = str(settings.langsmith_hide_inputs).lower()
     os.environ["LANGSMITH_HIDE_OUTPUTS"] = str(settings.langsmith_hide_outputs).lower()
     os.environ["LANGSMITH_SERVICE_NAME"] = service_name

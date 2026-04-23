@@ -26,6 +26,7 @@ langsmith_tracing="${LANGSMITH_TRACING:-false}"
 langsmith_api_key="${LANGSMITH_API_KEY:-}"
 langsmith_project="${LANGSMITH_PROJECT:-job-application-copilot-${deployment_environment}}"
 langsmith_endpoint="${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}"
+langsmith_workspace_id="${LANGSMITH_WORKSPACE_ID:-}"
 langsmith_hide_inputs="${LANGSMITH_HIDE_INPUTS:-true}"
 langsmith_hide_outputs="${LANGSMITH_HIDE_OUTPUTS:-true}"
 smtp_host="${SMTP_HOST:-}"
@@ -178,6 +179,7 @@ az deployment group create \
     langsmithApiKey="${langsmith_api_key}" \
     langsmithProject="${langsmith_project}" \
     langsmithEndpoint="${langsmith_endpoint}" \
+    langsmithWorkspaceId="${langsmith_workspace_id}" \
     langsmithHideInputs="${langsmith_hide_inputs}" \
     langsmithHideOutputs="${langsmith_hide_outputs}" \
     mcpClientAuthToken="${mcp_client_auth_token}" \

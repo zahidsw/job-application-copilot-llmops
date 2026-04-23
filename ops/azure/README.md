@@ -185,6 +185,7 @@ Create these repository variables. The Azure naming variables are optional becau
 - `LANGSMITH_TRACING`
 - `LANGSMITH_PROJECT`
 - `LANGSMITH_ENDPOINT`
+- `LANGSMITH_WORKSPACE_ID`
 - `LANGSMITH_HIDE_INPUTS`
 - `LANGSMITH_HIDE_OUTPUTS`
 - `SMTP_HOST`

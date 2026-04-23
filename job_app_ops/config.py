@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     langsmith_api_key: str = ""
     langsmith_project: str = ""
     langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_workspace_id: str = ""
     langsmith_hide_inputs: bool = True
     langsmith_hide_outputs: bool = True
 
