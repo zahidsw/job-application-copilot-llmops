@@ -140,6 +140,9 @@ class JobApplicationWorkflow:
         ]
         metrics = dict(result.metrics)
         metrics["similar_job_count"] = float(len(matches))
+        metrics["similar_job_refresh_in_progress"] = 0.0
+        metrics["similar_job_refresh_failed"] = 0.0
+        metrics["similar_job_refresh_duration_seconds"] = round(perf_counter() - start, 3)
         request = result.request.model_copy(
             update={
                 "discover_similar_jobs": True,
@@ -157,6 +160,69 @@ class JobApplicationWorkflow:
         )
         self.repository.save_result(updated)
         await asyncio.to_thread(self.tracker.log_result, updated)
+        return updated
+
+    def queue_similar_jobs_refresh(self, result: ApplicationResult, limit: int | None = None) -> ApplicationResult:
+        requested_limit = max(1, limit or result.request.similar_job_limit or 5)
+        stage_summaries = list(result.stage_summaries) + [
+            AgentStageSummary(
+                stage="similar_jobs",
+                summary="Similar-job discovery is running in the background.",
+                duration_seconds=0,
+            )
+        ]
+        metrics = dict(result.metrics)
+        metrics["similar_job_refresh_in_progress"] = 1.0
+        metrics["similar_job_refresh_failed"] = 0.0
+        request = result.request.model_copy(
+            update={
+                "discover_similar_jobs": True,
+                "similar_job_limit": requested_limit,
+            }
+        )
+        updated = result.model_copy(
+            update={
+                "request": request,
+                "stage_summaries": stage_summaries,
+                "metrics": metrics,
+                "updated_at": datetime.utcnow(),
+            }
+        )
+        self.repository.save_result(updated)
+        return updated
+
+    def mark_similar_jobs_refresh_failed(
+        self,
+        result: ApplicationResult,
+        error: str,
+        limit: int | None = None,
+    ) -> ApplicationResult:
+        requested_limit = max(1, limit or result.request.similar_job_limit or 5)
+        stage_summaries = list(result.stage_summaries) + [
+            AgentStageSummary(
+                stage="similar_jobs",
+                summary=f"Similar-job discovery failed: {error}",
+                duration_seconds=0,
+            )
+        ]
+        metrics = dict(result.metrics)
+        metrics["similar_job_refresh_in_progress"] = 0.0
+        metrics["similar_job_refresh_failed"] = 1.0
+        request = result.request.model_copy(
+            update={
+                "discover_similar_jobs": True,
+                "similar_job_limit": requested_limit,
+            }
+        )
+        updated = result.model_copy(
+            update={
+                "request": request,
+                "stage_summaries": stage_summaries,
+                "metrics": metrics,
+                "updated_at": datetime.utcnow(),
+            }
+        )
+        self.repository.save_result(updated)
         return updated
 
     async def _source_intake_node(self, state: ApplicationState) -> ApplicationState:

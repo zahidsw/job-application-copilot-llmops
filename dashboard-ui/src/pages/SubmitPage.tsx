@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import type { JobApplicationRequest, JobFetchResult, JobSourceType, JobUrlApplicationRequest, SubmissionChannel } from '../types'
@@ -40,42 +40,41 @@ const defaultManualForm: JobApplicationRequest = {
   similar_job_limit: 5,
 }
 
+function buildUrlFormFromSearchParams(searchParams: URLSearchParams): JobUrlApplicationRequest {
+  const sourceUrl = searchParams.get('source_url')?.trim() ?? ''
+  if (!sourceUrl) {
+    return defaultUrlForm
+  }
+
+  const sourceType = (searchParams.get('source_type') as JobSourceType | null) ?? defaultUrlForm.source_type
+  const submissionChannel =
+    (searchParams.get('submission_channel') as SubmissionChannel | null) ?? defaultUrlForm.submission_channel
+  const similarJobLimit = Number(searchParams.get('similar_job_limit') ?? defaultUrlForm.similar_job_limit)
+
+  return {
+    ...defaultUrlForm,
+    source_url: sourceUrl,
+    company: searchParams.get('company') ?? defaultUrlForm.company,
+    role: searchParams.get('role') ?? defaultUrlForm.role,
+    source_name: searchParams.get('source_name') ?? defaultUrlForm.source_name,
+    destination: searchParams.get('destination') ?? defaultUrlForm.destination,
+    source_type: sourceType,
+    submission_channel: submissionChannel,
+    discover_similar_jobs: parseBooleanParam(searchParams.get('discover_similar_jobs')),
+    similar_job_limit: Number.isFinite(similarJobLimit) && similarJobLimit > 0 ? similarJobLimit : defaultUrlForm.similar_job_limit,
+  }
+}
+
 export function SubmitPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<'url' | 'manual'>('url')
-  const [urlForm, setUrlForm] = useState<JobUrlApplicationRequest>(defaultUrlForm)
+  const [urlForm, setUrlForm] = useState<JobUrlApplicationRequest>(() => buildUrlFormFromSearchParams(searchParams))
   const [manualForm, setManualForm] = useState<JobApplicationRequest>(defaultManualForm)
   const [preview, setPreview] = useState<JobFetchResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const sourceUrl = searchParams.get('source_url')?.trim() ?? ''
-    if (!sourceUrl) {
-      return
-    }
-
-    const sourceType = (searchParams.get('source_type') as JobSourceType | null) ?? defaultUrlForm.source_type
-    const submissionChannel =
-      (searchParams.get('submission_channel') as SubmissionChannel | null) ?? defaultUrlForm.submission_channel
-    const similarJobLimit = Number(searchParams.get('similar_job_limit') ?? defaultUrlForm.similar_job_limit)
-
-    setMode('url')
-    setUrlForm((current) => ({
-      ...current,
-      source_url: sourceUrl,
-      company: searchParams.get('company') ?? current.company,
-      role: searchParams.get('role') ?? current.role,
-      source_name: searchParams.get('source_name') ?? current.source_name,
-      destination: searchParams.get('destination') ?? current.destination,
-      source_type: sourceType,
-      submission_channel: submissionChannel,
-      discover_similar_jobs: parseBooleanParam(searchParams.get('discover_similar_jobs')),
-      similar_job_limit: Number.isFinite(similarJobLimit) && similarJobLimit > 0 ? similarJobLimit : defaultUrlForm.similar_job_limit,
-    }))
-  }, [searchParams])
 
   async function handlePreview() {
     if (!urlForm.source_url.trim()) {

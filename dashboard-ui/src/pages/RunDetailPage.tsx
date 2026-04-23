@@ -48,6 +48,36 @@ export function RunDetailPage() {
     }
   }, [runId])
 
+  useEffect(() => {
+    if (!runId || run?.metrics.similar_job_refresh_in_progress !== 1) {
+      return
+    }
+
+    let isMounted = true
+    const intervalId = window.setInterval(async () => {
+      try {
+        const nextRun = await api.getRun(runId)
+        if (!isMounted) {
+          return
+        }
+        setRun(nextRun)
+        if (nextRun.metrics.similar_job_refresh_in_progress !== 1) {
+          setDiscoveringSimilarJobs(false)
+        }
+      } catch (pollError) {
+        if (isMounted) {
+          setDiscoveringSimilarJobs(false)
+          setError(pollError instanceof Error ? pollError.message : 'Unable to refresh similar-job results.')
+        }
+      }
+    }, 2500)
+
+    return () => {
+      isMounted = false
+      window.clearInterval(intervalId)
+    }
+  }, [runId, run?.metrics.similar_job_refresh_in_progress])
+
   async function handleApprove() {
     try {
       setBusy(true)
@@ -81,9 +111,9 @@ export function RunDetailPage() {
       setError(null)
       const nextRun = await api.discoverSimilarJobs(runId, run.request.similar_job_limit ?? 5)
       setRun(nextRun)
+      setDiscoveringSimilarJobs(nextRun.metrics.similar_job_refresh_in_progress === 1)
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Unable to discover similar jobs.')
-    } finally {
       setDiscoveringSimilarJobs(false)
     }
   }
@@ -101,6 +131,9 @@ export function RunDetailPage() {
   }
 
   const evidenceFileName = pathFileName(run.submission_record?.evidence ?? '')
+  const similarJobsRefreshing = run.metrics.similar_job_refresh_in_progress === 1
+  const similarJobsFailed = run.metrics.similar_job_refresh_failed === 1
+  const similarJobsSearchActive = discoveringSimilarJobs || similarJobsRefreshing
 
   return (
     <div className="detail-layout">
@@ -243,10 +276,20 @@ export function RunDetailPage() {
               <p className="eyebrow">Similar jobs</p>
               <h3>Internet jobs that look at least 80% similar</h3>
             </div>
-            <button className="primary-button" type="button" disabled={discoveringSimilarJobs} onClick={handleDiscoverSimilarJobs}>
-              {discoveringSimilarJobs ? 'Finding…' : run.similar_jobs.length ? 'Refresh similar jobs' : 'Find similar jobs'}
+            <button className="primary-button" type="button" disabled={similarJobsSearchActive} onClick={handleDiscoverSimilarJobs}>
+              {similarJobsSearchActive
+                ? 'Finding in background...'
+                : run.similar_jobs.length
+                  ? 'Refresh similar jobs'
+                  : 'Find similar jobs'}
             </button>
           </div>
+          {similarJobsRefreshing ? (
+            <p className="empty-state">Similar-job search is running in the background. Results will appear here automatically.</p>
+          ) : null}
+          {similarJobsFailed ? (
+            <p className="error-banner">The last similar-job search failed. Please try again.</p>
+          ) : null}
           {run.similar_jobs.length ? (
             <div className="artifact-list">
               {run.similar_jobs.map((job) => (

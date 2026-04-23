@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 import uvicorn
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from job_app_ops.runtime import Runtime, get_runtime
@@ -117,11 +117,20 @@ def create_api_application(runtime: Runtime | None = None) -> FastAPI:
         return updated
 
     @app.post("/api/v1/applications/{run_id}/similar-jobs", response_model=ApplicationResult)
-    async def discover_similar_jobs(run_id: str, limit: int = 5) -> ApplicationResult:
+    async def discover_similar_jobs(
+        run_id: str,
+        background_tasks: BackgroundTasks,
+        limit: int = 5,
+        background: bool = False,
+    ) -> ApplicationResult:
         result = runtime.repository.get_result(run_id)
         if result is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} was not found.")
         try:
+            if background:
+                queued = runtime.workflow.queue_similar_jobs_refresh(result, limit=limit)
+                background_tasks.add_task(_refresh_similar_jobs_background, runtime, run_id, limit)
+                return queued
             return await runtime.workflow.discover_similar_jobs(result, limit=limit)
         except Exception as exc:  # pragma: no cover
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -175,6 +184,17 @@ def create_api_application(runtime: Runtime | None = None) -> FastAPI:
         return FileResponse(path)
 
     return app
+
+
+async def _refresh_similar_jobs_background(runtime: Runtime, run_id: str, limit: int) -> None:
+    result = runtime.repository.get_result(run_id)
+    if result is None:
+        return
+    try:
+        await runtime.workflow.discover_similar_jobs(result, limit=limit)
+    except Exception as exc:  # pragma: no cover
+        latest = runtime.repository.get_result(run_id) or result
+        runtime.workflow.mark_similar_jobs_refresh_failed(latest, str(exc), limit=limit)
 
 
 app = create_api_application()
